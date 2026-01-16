@@ -26,6 +26,7 @@ import {
   startWasmDownload,
   toPostgresName,
 } from './utils.js'
+import { patchModule } from './precompiled-wrappers/index.js'
 
 // Importing the source as the built version is not ESM compatible
 import { Parser as ProtocolParser, serialize } from '@electric-sql/pg-protocol'
@@ -76,15 +77,17 @@ export class PGlite
   #globalNotifyListeners = new Set<(channel: string, payload: string) => void>()
 
   // receive data from wasm
-  // TRAMPOLINE MODE: Function pointer storage no longer needed
-  // Callbacks are stored in (this.mod as any)._pgliteCallbacks instead
+  // Function pointer for the write callback (used with pre-compiled wrappers)
+  #pglite_write: number = -1
 
   #currentResults: BackendMessage[] = []
   #currentThrowOnError: boolean = false
   #currentOnNotice: ((notice: NoticeMessage) => void) | undefined
 
   // send data to wasm
-    // buffer that holds the data to be sent to wasm
+  // Function pointer for the read callback (used with pre-compiled wrappers)
+  #pglite_read: number = -1
+  // buffer that holds the data to be sent to wasm
   #outputData: any = []
   // read index in the buffer
   #readOffset: number = 0
@@ -386,74 +389,72 @@ export class PGlite
     // Load the database engine
     this.mod = await PostgresModFactory(emscriptenOpts)
 
-    // TRAMPOLINE MODE: Set up callbacks via Module._pgliteCallbacks
-    // This approach uses EM_JS embedded in the C code to call these callbacks
-    // without requiring addFunction (which needs runtime WASM compilation)
-    // This makes PGlite compatible with Cloudflare Workers
-    ;(this.mod as any)._pgliteCallbacks = {
-      // Write callback - called when PostgreSQL sends output data
-      write: (ptr: number, length: number) => {
-        let bytes
-        try {
-          bytes = this.mod!.HEAPU8.subarray(ptr, ptr + length)
-        } catch (e: any) {
-          console.error('error', e)
-          throw e
-        }
-        this.#protocolParser.parse(bytes, (msg) => {
-          this.#parse(msg)
-        })
-        if (this.#keepRawResponse) {
-          const copied = bytes.slice()
+    // Patch the module to use pre-compiled WASM wrappers for addFunction
+    // This enables Cloudflare Workers compatibility by avoiding runtime WASM generation
+    patchModule(this.mod)
 
-          let requiredSize = this.#writeOffset + copied.length
+    // Set up the write callback using pre-compiled wrapper
+    this.#pglite_write = this.mod.addFunction((ptr: any, length: number) => {
+      let bytes
+      try {
+        bytes = this.mod!.HEAPU8.subarray(ptr, ptr + length)
+      } catch (e: any) {
+        console.error('error', e)
+        throw e
+      }
+      this.#protocolParser.parse(bytes, (msg) => {
+        this.#parse(msg)
+      })
+      if (this.#keepRawResponse) {
+        const copied = bytes.slice()
 
-          if (requiredSize > this.#inputData.length) {
-            const newSize =
-              this.#inputData.length +
-              (this.#inputData.length >> 1) +
-              requiredSize
-            if (requiredSize > PGlite.MAX_BUFFER_SIZE) {
-              requiredSize = PGlite.MAX_BUFFER_SIZE
-            }
-            const newBuffer = new Uint8Array(newSize)
-            newBuffer.set(this.#inputData.subarray(0, this.#writeOffset))
-            this.#inputData = newBuffer
+        let requiredSize = this.#writeOffset + copied.length
+
+        if (requiredSize > this.#inputData.length) {
+          const newSize =
+            this.#inputData.length +
+            (this.#inputData.length >> 1) +
+            requiredSize
+          if (requiredSize > PGlite.MAX_BUFFER_SIZE) {
+            requiredSize = PGlite.MAX_BUFFER_SIZE
           }
-
-          this.#inputData.set(copied, this.#writeOffset)
-          this.#writeOffset += copied.length
-
-          return this.#inputData.length
+          const newBuffer = new Uint8Array(newSize)
+          newBuffer.set(this.#inputData.subarray(0, this.#writeOffset))
+          this.#inputData = newBuffer
         }
-        return length
-      },
 
-      // Read callback - called when PostgreSQL needs input data
-      read: (ptr: number, max_length: number) => {
-        // copy current data to wasm buffer
-        let length = this.#outputData.length - this.#readOffset
-        if (length > max_length) {
-          length = max_length
-        }
-        try {
-          this.mod!.HEAP8.set(
-            (this.#outputData as Uint8Array).subarray(
-              this.#readOffset,
-              this.#readOffset + length,
-            ),
-            ptr,
-          )
-          this.#readOffset += length
-        } catch (e) {
-          console.log(e)
-        }
-        return length
-      },
-    }
+        this.#inputData.set(copied, this.#writeOffset)
+        this.#writeOffset += copied.length
 
-    // Note: _set_read_write_cbs is now a no-op in trampoline mode
-    // The callbacks above are called directly via EM_JS trampolines in the C code
+        return this.#inputData.length
+      }
+      return length
+    }, 'iii')
+
+    // Set up the read callback using pre-compiled wrapper
+    this.#pglite_read = this.mod.addFunction((ptr: any, max_length: number) => {
+      // copy current data to wasm buffer
+      let length = this.#outputData.length - this.#readOffset
+      if (length > max_length) {
+        length = max_length
+      }
+      try {
+        this.mod!.HEAP8.set(
+          (this.#outputData as Uint8Array).subarray(
+            this.#readOffset,
+            this.#readOffset + length,
+          ),
+          ptr,
+        )
+        this.#readOffset += length
+      } catch (e) {
+        console.log(e)
+      }
+      return length
+    }, 'iii')
+
+    // Register the callbacks with the WASM module
+    this.mod._set_read_write_cbs(this.#pglite_read, this.#pglite_write)
 
     // Sync the filesystem from any previous store
     await this.fs!.initialSyncFs()
@@ -583,9 +584,13 @@ export class PGlite
     try {
       await this.execProtocol(serialize.end())
       this.mod!._pgl_shutdown()
-      // TRAMPOLINE MODE: Clean up callbacks by setting to null
-      // No removeFunction needed since we didn't use addFunction
-      ;(this.mod as any)._pgliteCallbacks = null
+      // Clean up function pointers using pre-compiled wrapper's removeFunction
+      if (this.#pglite_read !== -1) {
+        this.mod!.removeFunction(this.#pglite_read)
+      }
+      if (this.#pglite_write !== -1) {
+        this.mod!.removeFunction(this.#pglite_write)
+      }
     } catch (e) {
       const err = e as { name: string; status: number }
       if (err.name === 'ExitStatus' && err.status === 0) {

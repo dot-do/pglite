@@ -1,0 +1,22 @@
+name = "pglite-workers-test"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# Increase memory limit for WASM
+[limits]
+cpu_ms = 30000
+
+[build]
+command = ""
+
+# Bundle WASM files as compiled modules
+[[rules]]
+type = "CompiledWasm"
+globs = ["**/*.wasm"]
+fallthrough = true
+
+# Bundle data files as binary
+[[rules]]
+type = "Data"
+globs = ["**/*.data"]
+fallthrough = true

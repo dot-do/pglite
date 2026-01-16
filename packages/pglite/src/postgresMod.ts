@@ -35,6 +35,8 @@ export interface PostgresMod
     signature: string,
   ) => number
   removeFunction: (f: number) => void
+  // WASM function table - used by pre-compiled wrappers for Cloudflare Workers compatibility
+  wasmTable: WebAssembly.Table
 }
 
 type PostgresFactory<T extends PostgresMod = PostgresMod> = (
