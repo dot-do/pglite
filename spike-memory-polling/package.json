@@ -1,0 +1,16 @@
+{
+  "name": "pglite-memory-polling-spike",
+  "version": "0.1.0",
+  "description": "Spike: Memory polling alternative to addFunction for PGlite",
+  "type": "module",
+  "scripts": {
+    "test": "tsx test-mock.ts",
+    "test:wasm": "tsx test-polling.ts",
+    "build": "./build.sh"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "tsx": "^4.0.0"
+  }
+}

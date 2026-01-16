@@ -1,0 +1,12 @@
+name = "pglite-trampoline-test"
+main = "test-worker.ts"
+compatibility_date = "2024-01-01"
+
+# Ensure we're testing in a CSP-restricted environment
+# similar to production Cloudflare Workers
+[dev]
+port = 8787
+
+# Note: In production, you would also need to:
+# 1. Build PGlite with the trampoline headers
+# 2. Include the WASM module as a binding or asset

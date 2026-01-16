@@ -10,11 +10,33 @@ export const IN_NODE =
 
 let wasmDownloadPromise: Promise<Response> | undefined
 
+// Helper to safely get wasm URL - deferred to avoid import.meta.url issues in Workers
+function getWasmUrl(): URL {
+  try {
+    return new URL('../release/pglite.wasm', import.meta.url)
+  } catch {
+    throw new Error(
+      'Cannot resolve WASM URL. In Cloudflare Workers, you must provide wasmModule option.',
+    )
+  }
+}
+
+// Helper to safely get fsBundle URL - deferred to avoid import.meta.url issues in Workers
+function getFsBundleUrl(): URL {
+  try {
+    return new URL('../release/pglite.data', import.meta.url)
+  } catch {
+    throw new Error(
+      'Cannot resolve fsBundle URL. In Cloudflare Workers, you must provide fsBundle option.',
+    )
+  }
+}
+
 export async function startWasmDownload() {
   if (IN_NODE || wasmDownloadPromise) {
     return
   }
-  const moduleUrl = new URL('../release/pglite.wasm', import.meta.url)
+  const moduleUrl = getWasmUrl()
   wasmDownloadPromise = fetch(moduleUrl)
 }
 
@@ -29,6 +51,7 @@ export async function instantiateWasm(
   instance: WebAssembly.Instance
   module: WebAssembly.Module
 }> {
+  // Check for provided module FIRST before trying to resolve URLs
   if (module || cachedWasmModule) {
     return {
       instance: await WebAssembly.instantiate(
@@ -38,7 +61,8 @@ export async function instantiateWasm(
       module: module || cachedWasmModule!,
     }
   }
-  const moduleUrl = new URL('../release/pglite.wasm', import.meta.url)
+  // Only resolve URL if no module provided - this may throw in Workers
+  const moduleUrl = getWasmUrl()
   if (IN_NODE) {
     const fs = await import('fs/promises')
     const buffer = await fs.readFile(moduleUrl)
@@ -67,7 +91,9 @@ export async function instantiateWasm(
 }
 
 export async function getFsBundle(): Promise<ArrayBuffer> {
-  const fsBundleUrl = new URL('../release/pglite.data', import.meta.url)
+  // Only resolve URL when called - this may throw in Workers
+  // Callers should provide fsBundle option to avoid this
+  const fsBundleUrl = getFsBundleUrl()
   if (IN_NODE) {
     const fs = await import('fs/promises')
     const fileData = await fs.readFile(fsBundleUrl)
