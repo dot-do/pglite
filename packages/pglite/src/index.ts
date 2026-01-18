@@ -9,3 +9,13 @@ export { IdbFs } from './fs/idbfs.js'
 export { Mutex } from 'async-mutex'
 export { uuid, formatQuery } from './utils.js'
 export type * as postgresMod from './postgresMod.js'
+
+// Memory snapshot utilities for fast cold starts
+export {
+  SNAPSHOT_VERSION,
+  loadSnapshotFromBytes,
+  loadSnapshotFromUrl,
+  loadSnapshotFromBlob,
+  serializeSnapshot,
+  compressSnapshot,
+} from './snapshot.js'

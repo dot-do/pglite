@@ -77,6 +77,37 @@ export interface DumpDataDirResult {
   filename: string
 }
 
+/**
+ * Memory snapshot for fast cold starts.
+ * Contains pre-initialized WASM memory state captured after initdb.
+ */
+export interface MemorySnapshot {
+  /**
+   * Snapshot format version for compatibility checking
+   */
+  version: string
+  /**
+   * Size of the WASM heap in bytes
+   */
+  heapSize: number
+  /**
+   * The captured WASM linear memory as an ArrayBuffer
+   */
+  heap: ArrayBuffer
+  /**
+   * Timestamp when the snapshot was captured (Unix ms)
+   */
+  capturedAt: number
+  /**
+   * PostgreSQL version this snapshot was created with
+   */
+  pgVersion?: string
+  /**
+   * Extensions that were pre-loaded in the snapshot
+   */
+  extensions?: string[]
+}
+
 export interface PGliteOptions<TExtensions extends Extensions = Extensions> {
   dataDir?: string
   username?: string
@@ -91,6 +122,12 @@ export interface PGliteOptions<TExtensions extends Extensions = Extensions> {
   fsBundle?: Blob | File
   parsers?: ParserOptions
   serializers?: SerializerOptions
+  /**
+   * Pre-initialized memory snapshot for fast cold starts.
+   * When provided, skips initdb and restores from the snapshot.
+   * CRITICAL: RNG is automatically reseeded after restore for security.
+   */
+  memorySnapshot?: MemorySnapshot
 }
 
 export type PGliteInterface<T extends Extensions = Extensions> =

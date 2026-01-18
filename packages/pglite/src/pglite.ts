@@ -14,6 +14,7 @@ import type {
   ExecProtocolOptions,
   ExecProtocolResult,
   Extensions,
+  MemorySnapshot,
   PGliteInterface,
   PGliteInterfaceExtensions,
   PGliteOptions,
@@ -203,6 +204,11 @@ export class PGlite
    * @returns A promise that resolves when the database is ready
    */
   async #init(options: PGliteOptions) {
+    // Check if we should initialize from a memory snapshot (fast path)
+    if (options.memorySnapshot) {
+      return this.#initFromSnapshot(options)
+    }
+
     if (options.fs) {
       this.fs = options.fs
     } else {
@@ -543,6 +549,334 @@ export class PGlite
     for (const initFn of extensionInitFns) {
       await initFn()
     }
+  }
+
+  /**
+   * Initialize from a pre-captured memory snapshot for fast cold starts.
+   * This method bypasses the expensive initdb phase by restoring WASM memory state.
+   *
+   * SECURITY: RNG is automatically reseeded after restore to prevent
+   * deterministic random sequences across instances.
+   *
+   * @param options PGlite options including the memory snapshot
+   */
+  async #initFromSnapshot(options: PGliteOptions) {
+    const snapshot = options.memorySnapshot!
+
+    // Validate snapshot version
+    if (snapshot.version !== '1.0') {
+      throw new Error(
+        `Unsupported snapshot version: ${snapshot.version}. Expected: 1.0`,
+      )
+    }
+
+    this.#log('pglite: initializing from memory snapshot')
+
+    // Set up filesystem (still needed for runtime operations)
+    if (options.fs) {
+      this.fs = options.fs
+    } else {
+      const { dataDir, fsType } = parseDataDir(options.dataDir)
+      this.fs = await loadFs(dataDir, fsType)
+    }
+
+    const args = [
+      `PGDATA=${PGDATA}`,
+      `PREFIX=${WASM_PREFIX}`,
+      `PGUSER=${options.username ?? 'postgres'}`,
+      `PGDATABASE=${options.database ?? 'template1'}`,
+      'MODE=REACT',
+      'REPL=N',
+      ...(this.debug ? ['-d', this.debug.toString()] : []),
+    ]
+
+    // Get the fs bundle - required for module initialization
+    const fsBundleBufferPromise = options.fsBundle
+      ? options.fsBundle.arrayBuffer()
+      : getFsBundle()
+    let fsBundleBuffer: ArrayBuffer
+    fsBundleBufferPromise.then((buffer) => {
+      fsBundleBuffer = buffer
+    })
+
+    let emscriptenOpts: Partial<PostgresMod> = {
+      WASM_PREFIX,
+      arguments: args,
+      INITIAL_MEMORY: options.initialMemory ?? snapshot.heapSize,
+      noExitRuntime: true,
+      ...(this.debug > 0
+        ? { print: console.info, printErr: console.error }
+        : { print: () => {}, printErr: () => {} }),
+      instantiateWasm: (imports, successCallback) => {
+        instantiateWasm(imports, options.wasmModule).then(
+          ({ instance, module }) => {
+            // @ts-ignore wrong type in Emscripten typings
+            successCallback(instance, module)
+          },
+        )
+        return {}
+      },
+      getPreloadedPackage: (remotePackageName, remotePackageSize) => {
+        if (remotePackageName === 'pglite.data') {
+          if (fsBundleBuffer.byteLength !== remotePackageSize) {
+            throw new Error(
+              `Invalid FS bundle size: ${fsBundleBuffer.byteLength} !== ${remotePackageSize}`,
+            )
+          }
+          return fsBundleBuffer
+        }
+        throw new Error(`Unknown package: ${remotePackageName}`)
+      },
+      preRun: [
+        (mod: any) => {
+          // Register /dev/blob device (same as normal init)
+          const devId = mod.FS.makedev(64, 0)
+          const devOpt = {
+            open: (_stream: any) => {},
+            close: (_stream: any) => {},
+            read: (
+              _stream: any,
+              buffer: Uint8Array,
+              offset: number,
+              length: number,
+              position: number,
+            ) => {
+              const buf = this.#queryReadBuffer
+              if (!buf) {
+                throw new Error(
+                  'No /dev/blob File or Blob provided to read from',
+                )
+              }
+              const contents = new Uint8Array(buf)
+              if (position >= contents.length) return 0
+              const size = Math.min(contents.length - position, length)
+              for (let i = 0; i < size; i++) {
+                buffer[offset + i] = contents[position + i]
+              }
+              return size
+            },
+            write: (
+              _stream: any,
+              buffer: Uint8Array,
+              offset: number,
+              length: number,
+              _position: number,
+            ) => {
+              this.#queryWriteChunks ??= []
+              this.#queryWriteChunks.push(buffer.slice(offset, offset + length))
+              return length
+            },
+            llseek: (stream: any, offset: number, whence: number) => {
+              const buf = this.#queryReadBuffer
+              if (!buf) {
+                throw new Error('No /dev/blob File or Blob provided to llseek')
+              }
+              let position = offset
+              if (whence === 1) {
+                position += stream.position
+              } else if (whence === 2) {
+                position = new Uint8Array(buf).length
+              }
+              if (position < 0) {
+                throw new mod.FS.ErrnoError(28)
+              }
+              return position
+            },
+          }
+          mod.FS.registerDevice(devId, devOpt)
+          mod.FS.mkdev('/dev/blob', devId)
+        },
+      ],
+    }
+
+    const { emscriptenOpts: amendedEmscriptenOpts } = await this.fs!.init(
+      this,
+      emscriptenOpts,
+    )
+    emscriptenOpts = amendedEmscriptenOpts
+
+    // Await the fs bundle before creating the module
+    await fsBundleBufferPromise
+
+    // Create the Emscripten module
+    this.mod = await PostgresModFactory(emscriptenOpts)
+
+    // Restore WASM memory from snapshot
+    this.#log('pglite: restoring memory snapshot')
+    const snapshotData = new Uint8Array(snapshot.heap)
+
+    // Validate memory size compatibility
+    if (snapshotData.length > this.mod.HEAPU8.buffer.byteLength) {
+      throw new Error(
+        `Snapshot heap size (${snapshotData.length}) exceeds current memory allocation (${this.mod.HEAPU8.buffer.byteLength}). ` +
+          `Try increasing initialMemory option.`,
+      )
+    }
+
+    // Copy snapshot data to WASM memory
+    this.mod.HEAPU8.set(snapshotData)
+
+    // Re-register callbacks (CRITICAL - callbacks are JS, not in snapshot)
+    this.#log('pglite: re-registering callbacks after snapshot restore')
+    ;(this.mod as any)._pgliteCallbacks = {
+      // Write callback - called when PostgreSQL sends output data
+      write: (ptr: number, length: number) => {
+        let bytes
+        try {
+          bytes = this.mod!.HEAPU8.subarray(ptr, ptr + length)
+        } catch (e: any) {
+          console.error('error', e)
+          throw e
+        }
+        this.#protocolParser.parse(bytes, (msg) => {
+          this.#parse(msg)
+        })
+        if (this.#keepRawResponse) {
+          const copied = bytes.slice()
+
+          let requiredSize = this.#writeOffset + copied.length
+
+          if (requiredSize > this.#inputData.length) {
+            const newSize =
+              this.#inputData.length +
+              (this.#inputData.length >> 1) +
+              requiredSize
+            if (requiredSize > PGlite.MAX_BUFFER_SIZE) {
+              requiredSize = PGlite.MAX_BUFFER_SIZE
+            }
+            const newBuffer = new Uint8Array(newSize)
+            newBuffer.set(this.#inputData.subarray(0, this.#writeOffset))
+            this.#inputData = newBuffer
+          }
+
+          this.#inputData.set(copied, this.#writeOffset)
+          this.#writeOffset += copied.length
+
+          return this.#inputData.length
+        }
+        return length
+      },
+
+      // Read callback - called when PostgreSQL needs input data
+      read: (ptr: number, max_length: number) => {
+        let length = this.#outputData.length - this.#readOffset
+        if (length > max_length) {
+          length = max_length
+        }
+        try {
+          this.mod!.HEAP8.set(
+            (this.#outputData as Uint8Array).subarray(
+              this.#readOffset,
+              this.#readOffset + length,
+            ),
+            ptr,
+          )
+          this.#readOffset += length
+        } catch (e) {
+          console.log(e)
+        }
+        return length
+      },
+    }
+
+    // Reseed RNG (CRITICAL for security - prevents deterministic random sequences)
+    this.#log('pglite: reseeding RNG after snapshot restore')
+    this.#reseedRandom()
+
+    // Reset protocol parser state (fresh instance for clean communication)
+    this.#protocolParser = new ProtocolParser()
+
+    // Sync the filesystem
+    await this.fs!.initialSyncFs()
+
+    // Restart the backend (required after memory restore)
+    this.#log('pglite: restarting backend after snapshot restore')
+    this.mod._pgl_backend()
+
+    // Sync changes to filesystem
+    await this.syncToFs()
+
+    this.#ready = true
+
+    // Set the search path to public
+    await this.exec('SET search_path TO public;')
+
+    // Init array types
+    await this._initArrayTypes()
+
+    this.#log('pglite: snapshot restore complete')
+  }
+
+  /**
+   * Reseed PostgreSQL's random number generator with fresh entropy.
+   * Called after snapshot restore to ensure unique random sequences.
+   */
+  #reseedRandom() {
+    // Generate cryptographically secure random seed
+    // Use crypto.getRandomValues if available, otherwise fall back to Date.now()
+    let seedHigh: number
+    let seedLow: number
+
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      const seedArray = new Uint32Array(2)
+      crypto.getRandomValues(seedArray)
+      seedHigh = seedArray[0]
+      seedLow = seedArray[1]
+    } else {
+      // Fallback for environments without crypto
+      const now = Date.now()
+      seedHigh = (now / 0x100000000) >>> 0
+      seedLow = now >>> 0
+    }
+
+    // Call the C function to reseed PostgreSQL's RNG
+    // This function must be exported from the WASM build
+    if (typeof this.mod!._pgl_reseed_random === 'function') {
+      this.mod!._pgl_reseed_random(seedHigh, seedLow)
+    } else {
+      // Log warning if RNG reseeding is not available
+      // This is a security concern but shouldn't block operation
+      console.warn(
+        'pglite: _pgl_reseed_random not available - RNG state may be deterministic after snapshot restore',
+      )
+    }
+  }
+
+  /**
+   * Capture a memory snapshot of the current PGlite state.
+   * This can be used for fast cold starts by skipping initdb.
+   *
+   * IMPORTANT: Only capture snapshots from a freshly initialized instance
+   * without user data. Snapshots should be created at build time.
+   *
+   * @returns A MemorySnapshot that can be used to restore the state
+   */
+  async captureSnapshot(): Promise<MemorySnapshot> {
+    await this._checkReady()
+
+    this.#log('pglite: capturing memory snapshot')
+
+    // Sync any pending changes to ensure consistent state
+    await this.syncToFs()
+
+    // Capture the entire WASM heap
+    // Note: We use slice() to create a copy, as the underlying buffer may change
+    const heapView = this.mod!.HEAPU8
+    const heap = heapView.buffer.slice(0) as ArrayBuffer
+
+    const snapshot: MemorySnapshot = {
+      version: '1.0',
+      heapSize: heap.byteLength,
+      heap,
+      capturedAt: Date.now(),
+      extensions: Object.keys(this.#extensions),
+    }
+
+    this.#log(
+      `pglite: snapshot captured (${(heap.byteLength / 1024 / 1024).toFixed(2)} MB)`,
+    )
+
+    return snapshot
   }
 
   /**
