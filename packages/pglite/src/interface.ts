@@ -6,6 +6,91 @@ import type { Filesystem } from './fs/base.js'
 import type { DumpTarCompressionOptions } from './fs/tarUtils.js'
 import type { Parser, Serializer } from './types.js'
 
+/**
+ * Callback interface for PGlite's Emscripten module integration.
+ *
+ * These callbacks enable communication between PostgreSQL's C code (compiled to WASM)
+ * and JavaScript without requiring runtime WASM compilation. This is achieved through
+ * EM_JS trampolines that are compiled at build time.
+ *
+ * The callbacks are stored in `Module._pgliteCallbacks` and are invoked by the
+ * trampoline functions in the WASM code when PostgreSQL needs to read input or
+ * write output.
+ *
+ * This approach is necessary for Cloudflare Workers compatibility, where runtime
+ * WASM compilation via `addFunction` is blocked for security reasons.
+ *
+ * @see https://blog.pyodide.org/posts/function-pointer-cast-handling/
+ *
+ * @example
+ * ```typescript
+ * // Setting up callbacks on the Emscripten module
+ * (mod as any)._pgliteCallbacks = {
+ *   read: (ptr, maxLength) => {
+ *     // Copy data to WASM memory at ptr
+ *     mod.HEAP8.set(inputData.subarray(readOffset, readOffset + length), ptr);
+ *     return length;
+ *   },
+ *   write: (ptr, length) => {
+ *     // Read data from WASM memory at ptr
+ *     const bytes = mod.HEAPU8.subarray(ptr, ptr + length);
+ *     processOutput(bytes);
+ *     return length;
+ *   }
+ * };
+ * ```
+ */
+export interface PGliteCallbacks {
+  /**
+   * Read callback - called when PostgreSQL needs input data.
+   *
+   * This callback is invoked by the `recv()` trampoline in the WASM code
+   * when PostgreSQL is waiting for input (e.g., query data from the client).
+   *
+   * @param ptr - Pointer to WASM memory where data should be written
+   * @param maxLength - Maximum number of bytes that can be written
+   * @returns Number of bytes actually written, or negative value on error
+   *
+   * @example
+   * ```typescript
+   * read: (ptr, maxLength) => {
+   *   const available = outputData.length - readOffset;
+   *   const length = Math.min(available, maxLength);
+   *   mod.HEAP8.set(
+   *     outputData.subarray(readOffset, readOffset + length),
+   *     ptr
+   *   );
+   *   readOffset += length;
+   *   return length;
+   * }
+   * ```
+   */
+  read: ((ptr: number, maxLength: number) => number) | null
+
+  /**
+   * Write callback - called when PostgreSQL has output data.
+   *
+   * This callback is invoked by the `send()` trampoline in the WASM code
+   * when PostgreSQL sends response data (e.g., query results, errors, notices).
+   *
+   * @param ptr - Pointer to WASM memory containing the output data
+   * @param length - Number of bytes available to read
+   * @returns Number of bytes processed, or negative value on error
+   *
+   * @example
+   * ```typescript
+   * write: (ptr, length) => {
+   *   const bytes = mod.HEAPU8.subarray(ptr, ptr + length);
+   *   protocolParser.parse(bytes, (msg) => {
+   *     handleMessage(msg);
+   *   });
+   *   return length;
+   * }
+   * ```
+   */
+  write: ((ptr: number, length: number) => number) | null
+}
+
 export type FilesystemType = 'nodefs' | 'idbfs' | 'memoryfs'
 
 export type DebugLevel = 0 | 1 | 2 | 3 | 4 | 5
@@ -13,11 +98,11 @@ export type DebugLevel = 0 | 1 | 2 | 3 | 4 | 5
 export type RowMode = 'array' | 'object'
 
 export interface ParserOptions {
-  [pgType: number]: (value: string) => any
+  [pgType: number]: (value: string) => unknown
 }
 
 export interface SerializerOptions {
-  [pgType: number]: (value: any) => string
+  [pgType: number]: (value: unknown) => string
 }
 
 export interface QueryOptions {
@@ -35,27 +120,27 @@ export interface ExecProtocolOptions {
   onNotice?: (notice: NoticeMessage) => void
 }
 
-export interface ExtensionSetupResult<TNamespace = any> {
-  emscriptenOpts?: any
+export interface ExtensionSetupResult<TNamespace = unknown> {
+  emscriptenOpts?: Record<string, unknown>
   namespaceObj?: TNamespace
   bundlePath?: URL
   init?: () => Promise<void>
   close?: () => Promise<void>
 }
 
-export type ExtensionSetup<TNamespace = any> = (
+export type ExtensionSetup<TNamespace = unknown> = (
   pg: PGliteInterface,
-  emscriptenOpts: any,
+  emscriptenOpts: Record<string, unknown>,
   clientOnly?: boolean,
 ) => Promise<ExtensionSetupResult<TNamespace>>
 
-export interface Extension<TNamespace = any> {
+export interface Extension<TNamespace = unknown> {
   name: string
   setup: ExtensionSetup<TNamespace>
 }
 
 export type ExtensionNamespace<T> =
-  T extends Extension<infer TNamespace> ? TNamespace : any
+  T extends Extension<infer TNamespace> ? TNamespace : unknown
 
 export type Extensions = {
   [namespace: string]: Extension | URL
@@ -167,12 +252,12 @@ export type PGliteInterface<T extends Extensions = Extensions> =
     close(): Promise<void>
     query<T>(
       query: string,
-      params?: any[],
+      params?: unknown[],
       options?: QueryOptions,
     ): Promise<Results<T>>
     sql<T>(
       sqlStrings: TemplateStringsArray,
-      ...params: any[]
+      ...params: unknown[]
     ): Promise<Results<T>>
     exec(query: string, options?: QueryOptions): Promise<Array<Results>>
     describeQuery(query: string): Promise<DescribeQueryResult>
@@ -217,9 +302,9 @@ export type PGliteInterfaceExtensions<E> = E extends Extensions
     }
   : Record<string, never>
 
-export type Row<T = { [key: string]: any }> = T
+export type Row<T = { [key: string]: unknown }> = T
 
-export type Results<T = { [key: string]: any }> = {
+export type Results<T = { [key: string]: unknown }> = {
   rows: Row<T>[]
   affectedRows?: number
   fields: { name: string; dataTypeID: number }[]
@@ -229,12 +314,12 @@ export type Results<T = { [key: string]: any }> = {
 export interface Transaction {
   query<T>(
     query: string,
-    params?: any[],
+    params?: unknown[],
     options?: QueryOptions,
   ): Promise<Results<T>>
   sql<T>(
     sqlStrings: TemplateStringsArray,
-    ...params: any[]
+    ...params: unknown[]
   ): Promise<Results<T>>
   exec(query: string, options?: QueryOptions): Promise<Array<Results>>
   rollback(): Promise<void>
