@@ -96,13 +96,17 @@ globs = ["**/*.data"]
 
 The tiny variant is designed to fit within Cloudflare Workers' 128MB memory limit:
 
-| Component | Size |
-|-----------|------|
-| WASM binary | ~3MB |
-| Data bundle | ~2MB |
-| PostgreSQL runtime | ~35MB |
-| **Total footprint** | ~40MB |
-| **Available for app** | ~88MB |
+| Component | Target Size | Notes |
+|-----------|-------------|-------|
+| WASM binary | ~3MB | Optimized with -Oz, closure compiler |
+| Data bundle | ~2MB | LZ4 compressed filesystem |
+| PostgreSQL runtime | ~35MB | Minimal memory settings |
+| **Total footprint** | ~40MB | Target for production use |
+| **Available for app** | ~88MB | Remaining for queries and results |
+
+> **Note**: These are target sizes. The current package uses placeholder symlinks to
+> the standard pglite release (~13MB total). Actual tiny sizes will be available
+> after the Docker build is complete (see build-pglite-tiny.sh).
 
 ## Use Cases
 
@@ -117,8 +121,8 @@ This variant is ideal for:
 
 | Feature | @dotdo/pglite | @dotdo/pglite-tiny |
 |---------|---------------|-------------------|
-| Bundle size | ~13MB | ~5MB (target) |
-| Runtime memory | ~64MB | ~40MB |
+| Bundle size | ~13MB | ~5MB (target*) |
+| Runtime memory | ~64MB | ~40MB (target*) |
 | Extensions | All available | None |
 | Full-text search | Yes | No |
 | Vector similarity | Yes (pgvector) | No |
@@ -126,9 +130,11 @@ This variant is ideal for:
 | XML support | Yes | No |
 | UUID generation | Yes | No |
 
+*Target sizes pending Docker build completion.
+
 ## Building from Source
 
-The tiny WASM is built using `build-pglite-tiny.sh`:
+The tiny WASM is built using `build-pglite-tiny.sh` in Docker:
 
 ```bash
 cd packages/pglite/postgres-pglite
@@ -137,9 +143,16 @@ cd packages/pglite/postgres-pglite
 
 Build configuration:
 - `PGLITE_TINY=true` - Enables minimal build mode
-- `PGLITE_UTF8_ONLY=true` - Excludes charset converters
-- `SKIP_CONTRIB=true` - Skips all extensions
-- `-Oz` optimization for minimum size
+- `PGLITE_UTF8_ONLY=true` - Excludes charset converters (~1.8MB savings)
+- `SKIP_CONTRIB=true` - Skips all extensions (~2-3MB savings)
+- `SNOWBALL_LANGUAGES=""` - No text search stemmers (~500KB savings)
+- `-Oz` optimization with closure compiler for minimum size
+
+### Current Status
+
+The release directory currently contains symlinks to the standard pglite build
+as placeholders. After running the Docker build, actual tiny WASM files will
+replace these symlinks.
 
 ## API Reference
 

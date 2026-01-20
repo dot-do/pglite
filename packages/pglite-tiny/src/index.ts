@@ -81,13 +81,16 @@ export const VARIANT = 'tiny'
 /**
  * Memory budget for tiny variant.
  *
- * These are approximate values for planning memory usage in
+ * These are TARGET values for planning memory usage in
  * constrained environments like Cloudflare Workers (128MB limit).
+ *
+ * Note: These are targets pending Docker build completion.
+ * Current package uses placeholder symlinks to standard pglite release.
  */
 export const TINY_MEMORY_BUDGET = {
-  /** Approximate WASM binary size */
+  /** Target WASM binary size (pending build) */
   wasmBinary: 3 * 1024 * 1024,      // ~3MB target
-  /** Approximate data bundle size */
+  /** Target data bundle size (pending build) */
   dataBundle: 2 * 1024 * 1024,       // ~2MB target
   /** Approximate PostgreSQL runtime memory */
   postgresRuntime: 35 * 1024 * 1024, // ~35MB
