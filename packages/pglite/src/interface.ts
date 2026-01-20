@@ -108,6 +108,33 @@ export interface MemorySnapshot {
   extensions?: string[]
 }
 
+/**
+ * Memory statistics for monitoring WASM heap usage.
+ * Useful for tracking memory consumption in constrained environments
+ * like Cloudflare Workers (128MB limit).
+ */
+export interface MemoryStats {
+  /**
+   * Total WASM heap size in bytes (allocated memory)
+   */
+  heapSize: number
+  /**
+   * Peak heap size observed during this session (if trackable)
+   * Note: This is only tracked from when PGlite was initialized
+   */
+  peakHeapSize: number
+  /**
+   * PostgreSQL memory configuration settings
+   */
+  postgresSettings: {
+    sharedBuffers: string
+    workMem: string
+    tempBuffers: string
+    walBuffers: string
+    maintenanceWorkMem: string
+  }
+}
+
 export interface PGliteOptions<TExtensions extends Extensions = Extensions> {
   dataDir?: string
   username?: string
@@ -175,6 +202,7 @@ export type PGliteInterface<T extends Extensions = Extensions> =
     offNotification(callback: (channel: string, payload: string) => void): void
     dumpDataDir(compression?: DumpTarCompressionOptions): Promise<File | Blob>
     refreshArrayTypes(): Promise<void>
+    getMemoryStats(): Promise<MemoryStats>
   }
 
 export type PGliteInterfaceExtensions<E> = E extends Extensions

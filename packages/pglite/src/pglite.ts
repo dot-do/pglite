@@ -15,6 +15,7 @@ import type {
   ExecProtocolResult,
   Extensions,
   MemorySnapshot,
+  MemoryStats,
   PGliteInterface,
   PGliteInterfaceExtensions,
   PGliteOptions,
@@ -99,6 +100,9 @@ export class PGlite
   #inputData = new Uint8Array(0)
   // write index in the buffer
   #writeOffset: number = 0
+
+  // Memory monitoring: track peak heap size observed during this session
+  #peakHeapSize: number = 0
 
   /**
    * Create a new PGlite instance
@@ -539,6 +543,9 @@ export class PGlite
 
     this.#ready = true
 
+    // Initialize peak heap size tracking
+    this.#peakHeapSize = this.mod!.HEAPU8.buffer.byteLength
+
     // Set the search path to public for this connection
     await this.exec('SET search_path TO public;')
 
@@ -798,6 +805,9 @@ export class PGlite
 
     this.#ready = true
 
+    // Initialize peak heap size tracking
+    this.#peakHeapSize = this.mod!.HEAPU8.buffer.byteLength
+
     // Set the search path to public
     await this.exec('SET search_path TO public;')
 
@@ -898,6 +908,77 @@ export class PGlite
    */
   get closed() {
     return this.#closed
+  }
+
+  /**
+   * Get memory statistics for monitoring WASM heap usage.
+   * Useful for tracking memory consumption in constrained environments
+   * like Cloudflare Workers (128MB limit).
+   *
+   * @returns Memory statistics including heap size and PostgreSQL settings
+   */
+  async getMemoryStats(): Promise<MemoryStats> {
+    await this._checkReady()
+
+    // Get current heap size from WASM module
+    const currentHeapSize = this.mod!.HEAPU8.buffer.byteLength
+
+    // Update peak heap size if current is larger
+    if (currentHeapSize > this.#peakHeapSize) {
+      this.#peakHeapSize = currentHeapSize
+    }
+
+    // Query PostgreSQL for memory settings
+    const result = await this.query<{ name: string; setting: string }>(`
+      SELECT name, setting
+      FROM pg_settings
+      WHERE name IN (
+        'shared_buffers',
+        'work_mem',
+        'temp_buffers',
+        'wal_buffers',
+        'maintenance_work_mem'
+      )
+    `)
+
+    // Build settings object from query results
+    const settingsMap = new Map<string, string>()
+    for (const row of result.rows) {
+      settingsMap.set(row.name, row.setting)
+    }
+
+    // Format settings with units (PostgreSQL returns values in various units)
+    // shared_buffers, temp_buffers, wal_buffers are in 8kB blocks
+    // work_mem, maintenance_work_mem are in kB
+    const formatMemorySetting = (
+      name: string,
+      unit: 'blocks' | 'kb',
+    ): string => {
+      const value = settingsMap.get(name)
+      if (!value) return 'unknown'
+      const numValue = parseInt(value, 10)
+      if (isNaN(numValue)) return value
+      if (unit === 'blocks') {
+        // 8kB blocks
+        const kb = numValue * 8
+        return kb >= 1024 ? `${kb / 1024}MB` : `${kb}kB`
+      } else {
+        // Already in kB
+        return numValue >= 1024 ? `${numValue / 1024}MB` : `${numValue}kB`
+      }
+    }
+
+    return {
+      heapSize: currentHeapSize,
+      peakHeapSize: this.#peakHeapSize,
+      postgresSettings: {
+        sharedBuffers: formatMemorySetting('shared_buffers', 'blocks'),
+        workMem: formatMemorySetting('work_mem', 'kb'),
+        tempBuffers: formatMemorySetting('temp_buffers', 'blocks'),
+        walBuffers: formatMemorySetting('wal_buffers', 'blocks'),
+        maintenanceWorkMem: formatMemorySetting('maintenance_work_mem', 'kb'),
+      },
+    }
   }
 
   /**

@@ -2,6 +2,7 @@ import type {
   DebugLevel,
   ExecProtocolResult,
   Extensions,
+  MemoryStats,
   PGliteInterface,
   PGliteInterfaceExtensions,
   PGliteOptions,
@@ -444,6 +445,10 @@ export class PGliteWorker
     return (await this.#rpc('dumpDataDir', compression)) as File | Blob
   }
 
+  async getMemoryStats(): Promise<MemoryStats> {
+    return await this.#rpc('getMemoryStats')
+  }
+
   onLeaderChange(callback: () => void) {
     this.#eventTarget.addEventListener('leader-change', callback)
     return () => {
@@ -710,6 +715,9 @@ function makeWorkerApi(tabId: string, db: PGlite) {
     async _releaseTransactionLock() {
       transactionLockRelease?.()
       transactionLockRelease = null
+    },
+    async getMemoryStats() {
+      return await db.getMemoryStats()
     },
   }
 }

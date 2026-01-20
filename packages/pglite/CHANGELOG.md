@@ -1,4 +1,50 @@
-# @electric-sql/pglite
+# @dotdo/pglite
+
+Fork of [@electric-sql/pglite](https://github.com/electric-sql/pglite) with Cloudflare Workers compatibility.
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.0] - 2026-01-20
+
+### Added
+
+#### Cloudflare Workers Compatibility
+- Trampoline fix eliminating runtime WASM bytecode generation
+- EM_JS macros compiled at build time for callback handling
+- `Module._pgliteCallbacks` for callback function storage
+- No `addFunction()` calls that would trigger runtime WASM compilation
+
+#### Static WASM Import Support
+- `wasmModule` option to accept pre-compiled `WebAssembly.Module`
+- `fsBundle` option to accept filesystem bundle as `Blob`
+- Compatible with Wrangler's static WASM import rules
+- Bypasses `import.meta.url` resolution (undefined in Workers)
+
+#### Memory Optimization for 128MB Worker Limit
+- Optimized PostgreSQL memory settings in `WASM_PGOPTS`
+- `shared_buffers=16MB` (down from 128MB default)
+- `max_connections=1` for single-client DO model
+- Reduced `work_mem`, `temp_buffers`, and `wal_buffers`
+
+#### Memory Snapshot System
+- `loadSnapshotFromBytes` - Load database state from bytes
+- `loadSnapshotFromUrl` - Load snapshot from URL
+- `loadSnapshotFromBlob` - Load snapshot from Blob
+- `serializeSnapshot` - Serialize database state
+- `compressSnapshot` - Compress snapshots for storage
+- Fast cold starts with pre-initialized database state
+
+### Changed
+
+- Package renamed from `@electric-sql/pglite` to `@dotdo/pglite`
+- Repository moved to `github.com/dot-do/pglite`
+
+---
+
+## Upstream Changelog (from @electric-sql/pglite)
 
 ## 0.3.15
 
