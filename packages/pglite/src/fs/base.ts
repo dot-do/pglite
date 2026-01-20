@@ -169,12 +169,15 @@ export type FsStats = {
   ctime: number
 }
 
+// Emscripten types that are not properly typed in @types/emscripten
+type EmscriptenDeviceSpec = number | undefined
+
 type EmscriptenFileSystem = Emscripten.FileSystemType & {
   createNode: (
     parent: FSNode | null,
     name: string,
     mode: number,
-    dev?: any,
+    dev?: EmscriptenDeviceSpec,
   ) => FSNode
   node_ops: FS.NodeOps
   stream_ops: FS.StreamOps & {
@@ -183,18 +186,18 @@ type EmscriptenFileSystem = Emscripten.FileSystemType & {
       stream: FSStream,
       length: number,
       position: number,
-      prot: any,
-      flags: any,
+      prot: number,
+      flags: number,
     ) => { ptr: number; allocated: boolean }
     msync: (
       stream: FSStream,
       buffer: Uint8Array,
       offset: number,
       length: number,
-      mmapFlags: any,
+      mmapFlags: number,
     ) => number
   }
-} & { [key: string]: any }
+} & Record<string, unknown>
 
 type FSNode = FS.FSNode & {
   node_ops: FS.NodeOps
@@ -219,7 +222,7 @@ type EmscriptenFS = PostgresMod['FS'] & {
     parent: FSNode | null,
     name: string,
     mode: number,
-    dev?: any,
+    dev?: EmscriptenDeviceSpec,
   ) => FSNode
 }
 
@@ -235,6 +238,10 @@ export const ERRNO_CODES = {
   ENOTEMPTY: 55,
 } as const
 
+interface FsError extends Error {
+  code?: number
+}
+
 /**
  * Create an emscripten filesystem that uses the BaseFilesystem.
  * @param Module The emscripten module
@@ -248,10 +255,12 @@ const createEmscriptenFS = (Module: PostgresMod, baseFS: BaseFilesystem) => {
     tryFSOperation<T>(f: () => T): T {
       try {
         return f()
-      } catch (e: any) {
-        if (!e.code) throw e
-        if (e.code === 'UNKNOWN') throw new FS.ErrnoError(ERRNO_CODES.EINVAL)
-        throw new FS.ErrnoError(e.code)
+      } catch (e: unknown) {
+        const fsError = e as FsError
+        if (!fsError.code) throw e
+        if (fsError.code === ERRNO_CODES.EINVAL)
+          throw new FS.ErrnoError(ERRNO_CODES.EINVAL)
+        throw new FS.ErrnoError(fsError.code)
       }
     },
     mount(_mount: FSMount): FSNode {
@@ -259,7 +268,7 @@ const createEmscriptenFS = (Module: PostgresMod, baseFS: BaseFilesystem) => {
     },
     syncfs(
       _mount: FS.Mount,
-      _populate: any, // This has the wrong type in @types/emscripten
+      _populate: boolean,
       _done: (err?: number | null) => unknown,
     ): void {
       // noop
@@ -268,7 +277,7 @@ const createEmscriptenFS = (Module: PostgresMod, baseFS: BaseFilesystem) => {
       parent: FSNode | null,
       name: string,
       mode: number,
-      _dev?: any,
+      _dev?: EmscriptenDeviceSpec,
     ): FSNode {
       if (!FS.isDir(mode) && !FS.isFile(mode)) {
         throw new FS.ErrnoError(28)
@@ -339,7 +348,7 @@ const createEmscriptenFS = (Module: PostgresMod, baseFS: BaseFilesystem) => {
       },
       mknod(parent: FSNode, name: string, mode: number, dev: unknown): FSNode {
         log?.('mknod', EMFS.realPath(parent), name, mode, dev)
-        const node = EMFS.createNode(parent, name, mode, dev)
+        const node = EMFS.createNode(parent, name, mode, dev as EmscriptenDeviceSpec)
         // create the backing node for this in the fs root as well
         const path = EMFS.realPath(node)
         return EMFS.tryFSOperation(() => {
@@ -365,7 +374,7 @@ const createEmscriptenFS = (Module: PostgresMod, baseFS: BaseFilesystem) => {
         const path = [EMFS.realPath(parent), name].join('/')
         try {
           baseFS.unlink(path)
-        } catch (e: any) {
+        } catch (_e: unknown) {
           // no-op
         }
       },
@@ -493,8 +502,8 @@ const createEmscriptenFS = (Module: PostgresMod, baseFS: BaseFilesystem) => {
         stream: FSStream,
         length: number,
         position: number,
-        prot: any,
-        flags: any,
+        prot: number,
+        flags: number,
       ) {
         log?.(
           'mmap stream',
@@ -508,7 +517,8 @@ const createEmscriptenFS = (Module: PostgresMod, baseFS: BaseFilesystem) => {
           throw new FS.ErrnoError(ERRNO_CODES.ENODEV)
         }
 
-        const ptr = (Module as any).mmapAlloc(length) // TODO: Fix type and check this is exported
+        const ModuleWithMmap = Module as PostgresMod & { mmapAlloc: (size: number) => number }
+        const ptr = ModuleWithMmap.mmapAlloc(length)
 
         EMFS.stream_ops.read(
           stream,
@@ -524,7 +534,7 @@ const createEmscriptenFS = (Module: PostgresMod, baseFS: BaseFilesystem) => {
         buffer: Uint8Array,
         offset: number,
         length: number,
-        mmapFlags: any,
+        mmapFlags: number,
       ) {
         log?.(
           'msync stream',

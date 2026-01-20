@@ -21,7 +21,7 @@ export class NodeFS extends EmscriptenBuiltinFilesystem {
       ...opts,
       preRun: [
         ...(opts.preRun || []),
-        (mod: any) => {
+        (mod: PostgresMod) => {
           const nodefs = mod.FS.filesystems.NODEFS
           mod.FS.mkdir(PGDATA)
           mod.FS.mount(nodefs, { root: this.rootDir }, PGDATA)

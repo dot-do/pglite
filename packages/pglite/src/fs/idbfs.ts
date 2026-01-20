@@ -9,7 +9,7 @@ export class IdbFs extends EmscriptenBuiltinFilesystem {
       ...opts,
       preRun: [
         ...(opts.preRun || []),
-        (mod: any) => {
+        (mod: PostgresMod) => {
           const idbfs = mod.FS.filesystems.IDBFS
           // Mount the idbfs to the users dataDir then symlink the PGDATA to the
           // idbfs mount point.
@@ -28,7 +28,7 @@ export class IdbFs extends EmscriptenBuiltinFilesystem {
 
   initialSyncFs() {
     return new Promise<void>((resolve, reject) => {
-      this.pg!.Module.FS.syncfs(true, (err: any) => {
+      this.pg!.Module.FS.syncfs(true, (err: Error | null) => {
         if (err) {
           reject(err)
         } else {
@@ -40,7 +40,7 @@ export class IdbFs extends EmscriptenBuiltinFilesystem {
 
   syncToFs(_relaxedDurability?: boolean) {
     return new Promise<void>((resolve, reject) => {
-      this.pg!.Module.FS.syncfs(false, (err: any) => {
+      this.pg!.Module.FS.syncfs(false, (err: Error | null) => {
         if (err) {
           reject(err)
         } else {
