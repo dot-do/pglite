@@ -1,3 +1,47 @@
+# @dotdo/pglite
+
+> **This is a fork of [electric-sql/pglite](https://github.com/electric-sql/pglite) with modifications for Cloudflare Workers compatibility.**
+
+## Fork Information
+
+| | |
+|---|---|
+| **Upstream** | [electric-sql/pglite](https://github.com/electric-sql/pglite) |
+| **Fork** | [dot-do/pglite](https://github.com/dot-do/pglite) |
+| **Original Author** | [Electric DB Limited](https://electric-sql.com) |
+| **License** | Apache 2.0 / PostgreSQL License (dual-licensed) |
+
+### Why This Fork Exists
+
+Cloudflare Workers blocks runtime WebAssembly compilation for security reasons. The standard PGLite uses Emscripten's `addFunction()` which generates WASM bytecode at runtime, causing the error:
+
+```
+WebAssembly.Module(): Wasm code generation disallowed by embedder
+```
+
+### Modifications Made
+
+1. **Trampoline Fix** - Replaced runtime WASM generation with pre-compiled callback wrappers using EM_JS macros
+2. **Static WASM Import Support** - Added `wasmModule` and `fsBundle` options for pre-compiled WASM loading
+3. **Memory Optimization** - Tuned PostgreSQL memory settings for Cloudflare Workers' 128MB limit
+
+### Usage in Cloudflare Workers
+
+```typescript
+import { PGlite } from '@dotdo/pglite'
+import pgliteWasm from './pglite.wasm'
+import pgliteData from './pglite.data'
+
+const pg = await PGlite.create({
+  wasmModule: pgliteWasm,      // Pre-compiled WebAssembly.Module
+  fsBundle: new Blob([pgliteData]),  // Filesystem bundle
+})
+
+const result = await pg.query('SELECT 1+1 as result')
+```
+
+---
+
 <p align="center">
   <a href="https://pglite.dev" target="_blank">
     <picture>
