@@ -1,0 +1,92 @@
+{
+  "name": "@dotdo/pglite-tiny",
+  "version": "0.1.0",
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Minimal PGlite variant for Cloudflare Workers - core SQL only, ~5MB bundle",
+  "keywords": [
+    "postgres",
+    "sql",
+    "database",
+    "wasm",
+    "client",
+    "pglite",
+    "cloudflare",
+    "workers",
+    "tiny",
+    "minimal"
+  ],
+  "author": "Electric DB Limited",
+  "contributors": [
+    {
+      "name": "Electric DB Limited",
+      "url": "https://electric-sql.com"
+    },
+    {
+      "name": "dotdo",
+      "url": "https://github.com/dot-do"
+    }
+  ],
+  "homepage": "https://github.com/dot-do/pglite",
+  "license": "Apache-2.0",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./wasm": {
+      "import": "./release/pglite.wasm",
+      "require": "./release/pglite.wasm"
+    },
+    "./data": {
+      "import": "./release/pglite.data",
+      "require": "./release/pglite.data"
+    }
+  },
+  "type": "module",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "release/pglite.wasm",
+    "release/pglite.data",
+    "release/pglite.js"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dot-do/pglite",
+    "directory": "packages/pglite-tiny"
+  },
+  "scripts": {
+    "test": "vitest run tests/*.test.ts",
+    "build:js": "tsup",
+    "build": "pnpm build:js",
+    "lint": "eslint ./src --report-unused-disable-directives --max-warnings 0",
+    "format": "prettier --write ./src",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dotdo/pglite": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.11",
+    "tsup": "^8.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^2.1.2"
+  },
+  "browser": {
+    "fs": false,
+    "fs/promises": false,
+    "path": false,
+    "url": false
+  }
+}
