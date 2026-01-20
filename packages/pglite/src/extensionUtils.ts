@@ -50,9 +50,18 @@ export async function loadExtensionBundle(
   }
 }
 
+/** Logger function type for extension loading */
+type ExtensionLogger = (...args: unknown[]) => void
+
+/** Tar file entry from tinyTar */
+interface TarEntry {
+  name: string
+  data: Uint8Array
+}
+
 export async function loadExtensions(
   mod: PostgresMod,
-  log: (...args: any[]) => void,
+  log: ExtensionLogger,
 ) {
   for (const ext in mod.pg_extensions) {
     let blob
@@ -75,23 +84,23 @@ function loadExtension(
   mod: PostgresMod,
   _ext: string,
   bytes: Uint8Array,
-  log: (...args: any[]) => void,
+  log: ExtensionLogger,
 ) {
-  const data = tinyTar.untar(bytes)
-  data.forEach((file: any) => {
+  const data = tinyTar.untar(bytes) as TarEntry[]
+  data.forEach((file: TarEntry) => {
     if (!file.name.startsWith('.')) {
       const filePath = mod.WASM_PREFIX + '/' + file.name
       if (file.name.endsWith('.so')) {
-        const extOk = (...args: any[]) => {
+        const extOk = (...args: unknown[]) => {
           log('pgfs:ext OK', filePath, args)
         }
-        const extFail = (...args: any[]) => {
+        const extFail = (...args: unknown[]) => {
           log('pgfs:ext FAIL', filePath, args)
         }
         mod.FS.createPreloadedFile(
           dirname(filePath),
           file.name.split('/').pop()!.slice(0, -3),
-          file.data as any, // There is a type error in Emscripten's FS.createPreloadedFile, this excepts a Uint8Array, but the type is defined as any
+          file.data as Uint8Array, // Emscripten accepts Uint8Array but the type definition is broader
           true,
           true,
           extOk,

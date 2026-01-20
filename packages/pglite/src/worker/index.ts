@@ -16,7 +16,7 @@ import { BackendMessage } from '@electric-sql/pg-protocol/messages'
 
 export type PGliteWorkerOptions<E extends Extensions = Extensions> =
   PGliteOptions<E> & {
-    meta?: any
+    meta?: unknown
     id?: string
   }
 
@@ -73,7 +73,7 @@ export class PGliteWorker
     })
 
     this.#workerReadyPromise = new Promise<void>((resolve) => {
-      const callback = (event: MessageEvent<any>) => {
+      const callback = (event: MessageEvent<{ type: string; id: string }>) => {
         if (event.data.type === 'ready') {
           this.#workerID = event.data.id
           this.#workerProcess.removeEventListener('message', callback)
@@ -761,7 +761,7 @@ type WorkerRpcResult<Method extends WorkerRpcMethod> = {
 type WorkerRpcError = {
   type: 'rpc-error'
   callId: string
-  error: any
+  error: { message: string }
 }
 
 type WorkerRpcResponse<Method extends WorkerRpcMethod> =
