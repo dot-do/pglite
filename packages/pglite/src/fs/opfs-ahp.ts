@@ -165,7 +165,7 @@ export class OpfsAhpFS extends BaseFilesystem {
       }
       // write new state to file
       this.#stateSH.truncate(0)
-      this.#stateSH.write(new TextEncoder().encode(JSON.stringify(state)), {
+      this.#stateSH.write(new TextEncoder().encode(JSON.stringify(state)).buffer as ArrayBuffer, {
         at: 0,
       })
       isNewState = true
@@ -308,7 +308,7 @@ export class OpfsAhpFS extends BaseFilesystem {
   async checkpointState() {
     const stateAB = new TextEncoder().encode(JSON.stringify(this.state))
     this.#stateSH.truncate(0)
-    this.#stateSH.write(stateAB, { at: 0 })
+    this.#stateSH.write(stateAB.buffer as ArrayBuffer, { at: 0 })
     this.#stateSH.flush()
     this.lastCheckpoint = Date.now()
   }
@@ -442,7 +442,7 @@ export class OpfsAhpFS extends BaseFilesystem {
       throw new FsError('EISDIR', 'Is a directory')
     }
     const sh = this.#sh.get(node.backingFilename)!
-    return sh.read(new Uint8Array(buffer.buffer, offset, length), {
+    return sh.read(new Uint8Array(buffer.buffer as ArrayBuffer, offset, length).buffer as ArrayBuffer, {
       at: position,
     })
   }
@@ -594,9 +594,10 @@ export class OpfsAhpFS extends BaseFilesystem {
     // Files in pool are empty, only write if data is provided
     if (data.length > 0) {
       sh.write(
-        typeof data === 'string'
+        (typeof data === 'string'
           ? new TextEncoder().encode(data)
-          : new Uint8Array(data),
+          : new Uint8Array(data)
+        ).buffer as ArrayBuffer,
         { at: 0 },
       )
       if (path.startsWith('/pg_wal')) {
@@ -639,7 +640,7 @@ export class OpfsAhpFS extends BaseFilesystem {
     if (!sh) {
       throw new FsError('EBADF', 'Bad file descriptor')
     }
-    const ret = sh.write(new Uint8Array(buffer, offset, length), {
+    const ret = sh.write(new Uint8Array(buffer.buffer as ArrayBuffer, offset, length).buffer as ArrayBuffer, {
       at: position,
     })
     if (path.startsWith('/pg_wal')) {
@@ -665,7 +666,7 @@ export class OpfsAhpFS extends BaseFilesystem {
     const entryJSON = JSON.stringify(entry)
     const stateAB = new TextEncoder().encode(`\n${entryJSON}`)
     const offset = this.#stateSH.getSize()
-    this.#stateSH.write(stateAB, { at: offset })
+    this.#stateSH.write(stateAB.buffer as ArrayBuffer, { at: offset })
     this.#unsyncedSH.add(this.#stateSH)
     return offset
   }

@@ -84,10 +84,10 @@ export class Parser {
   public parse(buffer: BufferParameter, callback: MessageCallback) {
     this.#mergeBuffer(
       ArrayBuffer.isView(buffer)
-        ? buffer.buffer.slice(
+        ? (buffer.buffer.slice(
             buffer.byteOffset,
             buffer.byteOffset + buffer.byteLength,
-          )
+          ) as ArrayBuffer)
         : buffer,
     )
     const bufferFullLength = this.#bufferOffset + this.#bufferRemainingLength
@@ -103,7 +103,7 @@ export class Parser {
           offset + HEADER_LENGTH,
           code,
           length,
-          this.#bufferView.buffer,
+          this.#bufferView.buffer as ArrayBuffer,
         )
         callback(message)
         offset += fullMessageLength
@@ -135,7 +135,7 @@ export class Parser {
           this.#bufferOffset >= this.#bufferRemainingLength
         ) {
           // We can move the relevant part to the beginning of the buffer instead of allocating a new buffer
-          newBuffer = this.#bufferView.buffer
+          newBuffer = this.#bufferView.buffer as ArrayBuffer
         } else {
           // Allocate a new larger buffer
           let newBufferLength = this.#bufferView.byteLength * 2

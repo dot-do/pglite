@@ -30,7 +30,7 @@ export async function loadExtensionBundle(
         },
       }),
     )
-    return new Blob(chunks)
+    return new Blob(chunks.map((chunk) => chunk.buffer as ArrayBuffer))
   } else {
     const response = await fetch(bundlePath.toString())
     if (!response.ok || !response.body) {

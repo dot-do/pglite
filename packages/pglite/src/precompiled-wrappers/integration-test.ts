@@ -9,7 +9,6 @@
 
 import {
   precompiledAddFunctionSync,
-  precompiledRemoveFunction,
   patchModule,
   PRECOMPILED_WRAPPERS,
 } from './precompiled-add-function';
@@ -104,7 +103,7 @@ async function runTests() {
 
     // Now use addFunction like PGlite does
     let called = false;
-    const callback = (ptr: number, len: number): number => {
+    const callback = (_ptr: number, len: number): number => {
       called = true;
       return len * 2;
     };

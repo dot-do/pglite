@@ -970,7 +970,7 @@ export class PGlite
     if (!this.#queryWriteChunks) {
       return undefined
     }
-    const blob = new Blob(this.#queryWriteChunks)
+    const blob = new Blob(this.#queryWriteChunks.map((chunk) => chunk.buffer as ArrayBuffer))
     this.#queryWriteChunks = undefined
     return blob
   }

@@ -88,7 +88,7 @@ export class Writer {
         this.#littleEndian,
       )
     }
-    return this.#bufferView.buffer.slice(code ? 0 : 5, this.#offset)
+    return this.#bufferView.buffer.slice(code ? 0 : 5, this.#offset) as ArrayBuffer
   }
 
   public flush(code?: number): Uint8Array {

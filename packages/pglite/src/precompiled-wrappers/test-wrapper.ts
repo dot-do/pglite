@@ -20,7 +20,7 @@ async function testWrapper() {
 
   // Verify the WASM module is valid
   try {
-    const module = await WebAssembly.compile(wasmBytes);
+    const module = await WebAssembly.compile(wasmBytes.buffer as ArrayBuffer);
     console.log('\n  WASM module compiled successfully!');
 
     // Test instantiation with a callback

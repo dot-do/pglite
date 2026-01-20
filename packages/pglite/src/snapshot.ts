@@ -28,7 +28,7 @@ async function decompressSnapshot(data: Uint8Array): Promise<Uint8Array> {
   if (typeof DecompressionStream !== 'undefined') {
     const stream = new DecompressionStream('gzip')
     const writer = stream.writable.getWriter()
-    writer.write(data)
+    writer.write(data.buffer as ArrayBuffer)
     writer.close()
 
     const chunks: Uint8Array[] = []
@@ -164,7 +164,7 @@ export async function compressSnapshot(data: Uint8Array): Promise<Uint8Array> {
   if (typeof CompressionStream !== 'undefined') {
     const stream = new CompressionStream('gzip')
     const writer = stream.writable.getWriter()
-    writer.write(data)
+    writer.write(data.buffer as ArrayBuffer)
     writer.close()
 
     const chunks: Uint8Array[] = []

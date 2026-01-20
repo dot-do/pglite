@@ -36,6 +36,7 @@ export interface PostgresMod
     signature: string,
   ) => number
   removeFunction: (f: number) => void
+  wasmTable?: WebAssembly.Table
 }
 
 type PostgresFactory<T extends PostgresMod = PostgresMod> = (

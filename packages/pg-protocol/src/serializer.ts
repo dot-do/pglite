@@ -35,7 +35,7 @@ const startup = (opts: Record<string, string>): Uint8Array => {
 
   const length = bodyBuffer.byteLength + 4
 
-  return new Writer().addInt32(length).add(bodyBuffer).flush()
+  return new Writer().addInt32(length).add(bodyBuffer.buffer as ArrayBuffer).flush()
 }
 
 const requestSsl = (): Uint8Array => {
@@ -140,10 +140,10 @@ const writeValues = (values: LegalValue[], valueMapper?: ValueMapper): void => {
       ArrayBuffer.isView(mappedVal)
     ) {
       const buffer = ArrayBuffer.isView(mappedVal)
-        ? mappedVal.buffer.slice(
+        ? (mappedVal.buffer.slice(
             mappedVal.byteOffset,
             mappedVal.byteOffset + mappedVal.byteLength,
-          )
+          ) as ArrayBuffer)
         : mappedVal
       // add the param type (binary) to the writer
       writer.addInt16(ParamType.BINARY)
@@ -173,7 +173,7 @@ const bind = (config: BindOpts = {}): Uint8Array => {
   writeValues(values, config.valueMapper)
 
   writer.addInt16(len)
-  writer.add(paramWriter.flush())
+  writer.add(paramWriter.flush().buffer as ArrayBuffer)
 
   // format code
   writer.addInt16(binary ? ParamType.BINARY : ParamType.STRING)

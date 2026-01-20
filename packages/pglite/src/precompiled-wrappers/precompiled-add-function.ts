@@ -61,7 +61,7 @@ async function getWrapperModule(signature: string): Promise<WebAssembly.Module> 
         `Available signatures: ${Object.keys(PRECOMPILED_WRAPPERS).join(', ')}`);
     }
     const bytes = decodeBase64(base64);
-    module = await WebAssembly.compile(bytes);
+    module = await WebAssembly.compile(bytes.buffer as ArrayBuffer);
     moduleCache.set(signature, module);
   }
   return module;
@@ -79,7 +79,7 @@ function getWrapperModuleSync(signature: string): WebAssembly.Module {
         `Available signatures: ${Object.keys(PRECOMPILED_WRAPPERS).join(', ')}`);
     }
     const bytes = decodeBase64(base64);
-    module = new WebAssembly.Module(bytes);
+    module = new WebAssembly.Module(bytes.buffer as ArrayBuffer);
     moduleCache.set(signature, module);
   }
   return module;
