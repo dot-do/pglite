@@ -5,10 +5,11 @@
  * - Full JSON and JSONB support with all operators (@>, <@, ?, ?|, ?&, ->, ->>)
  * - GIN indexes for efficient JSONB queries
  * - JSONB path queries (jsonpath: @?, @@)
- * - English-only text search stemmer (SNOWBALL_LANGUAGES=english)
- * - UTF-8 only charset support (PGLITE_UTF8_ONLY=true)
+ * - English text search stemmer
+ * - btree_gin and hstore extensions
+ * - UUID support
  *
- * Target: ~4MB WASM bundle, ~45-50MB runtime memory
+ * Target: ~8MB WASM bundle, ~50-60MB runtime memory
  *
  * This test file verifies:
  * 1. JSONB containment operators (@>, <@)
@@ -18,6 +19,7 @@
  * 5. GIN index creation and queries
  * 6. JSONB modification functions
  * 7. Document database use cases
+ * 8. English text search on JSON content
  *
  * To run these tests against a JSON build:
  * 1. Build with: ./build-pglite-json.sh
