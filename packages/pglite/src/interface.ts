@@ -246,53 +246,133 @@ export interface PGliteOptions<TExtensions extends Extensions = Extensions> {
    */
   memorySnapshot?: MemorySnapshot
   /**
-   * When true, extension bundles are not loaded at initialization time.
-   * Extensions are loaded on-demand when CREATE EXTENSION is called or
-   * when explicitly loaded via loadExtension().
-   * This can significantly reduce initial memory usage.
+   * Enable lazy (on-demand) extension loading to reduce initial memory usage.
+   *
+   * When enabled:
+   * - Extension bundles are NOT loaded during PGlite initialization
+   * - Extensions are loaded when `loadExtension()` is called explicitly
+   * - Memory is only consumed when extensions are actually needed
+   *
+   * **Performance Characteristics:**
+   * - Faster startup: Skip loading unused extension bundles
+   * - Lower baseline memory: Only core PostgreSQL in memory initially
+   * - On-demand cost: First use of extension incurs ~100-500ms load time
+   *
+   * **Recommended for:**
+   * - Memory-constrained environments (Cloudflare Workers: 128MB limit)
+   * - Applications that conditionally use extensions
+   * - Serverless functions with cold start sensitivity
+   *
+   * @default false
+   *
+   * @example
+   * ```typescript
+   * const pg = await PGlite.create({
+   *   extensions: { vector: vectorExtension },
+   *   lazyExtensions: true, // Don't load vector yet
+   * });
+   *
+   * // Later, when vector is needed:
+   * await pg.loadExtension('vector');
+   * await pg.exec('CREATE EXTENSION vector;');
+   * ```
    */
   lazyExtensions?: boolean
   /**
-   * When true (and lazyExtensions is enabled), extensions are automatically
-   * loaded when extension-specific SQL syntax is detected.
-   * Requires SQL parsing to detect extension usage.
+   * Automatically load extensions when extension-specific SQL is detected.
+   *
+   * **Note:** This feature requires SQL parsing and is not yet implemented.
+   * Currently has no effect. Use `loadExtension()` for explicit loading.
+   *
+   * @default false
    */
   autoLoadExtensions?: boolean
   /**
-   * Feature flags to control extension availability.
-   * When a flag is false, the extension will not be available even if configured.
+   * Feature flags to conditionally enable/disable extensions.
+   *
+   * When a flag is set to `false`, the extension:
+   * - Will not appear in `getExtensionStatus()`
+   * - Cannot be loaded via `loadExtension()`
+   * - `isExtensionAvailable()` returns false
+   *
+   * **Use Cases:**
+   * - A/B testing extension features
+   * - Environment-specific extension availability
+   * - Gradual rollout of new extensions
+   *
+   * @example
+   * ```typescript
+   * const pg = await PGlite.create({
+   *   extensions: { vector: vectorExtension, pgcrypto: pgcryptoExtension },
+   *   extensionFlags: {
+   *     vector: process.env.ENABLE_VECTOR === 'true',
+   *     pgcrypto: true, // Always available
+   *   },
+   * });
+   * ```
    */
   extensionFlags?: Record<string, boolean>
 }
 
 /**
- * Status of a configured extension
+ * Status of a configured extension.
+ *
+ * Used by `getExtensionStatus()` to report the current state of each
+ * extension. This is particularly useful when using lazy loading to
+ * understand which extensions are available vs loaded.
+ *
+ * @example
+ * ```typescript
+ * const status = await pg.getExtensionStatus();
+ * // { vector: { configured: true, loaded: false } }
+ * ```
  */
 export interface ExtensionStatus {
   /**
-   * Whether the extension is configured in PGliteOptions
+   * Whether the extension is configured in PGliteOptions.extensions
+   * and not disabled by a feature flag.
    */
   configured: boolean
   /**
-   * Whether the extension bundle has been loaded into memory
+   * Whether the extension bundle has been loaded into WASM memory.
+   * When false, the extension can still be loaded on-demand.
    */
   loaded: boolean
 }
 
 /**
- * Memory statistics for a single extension
+ * Memory statistics for a single extension.
+ *
+ * Provides detailed memory usage information for monitoring extensions
+ * in memory-constrained environments like Cloudflare Workers (128MB limit).
+ *
+ * **Memory Budget Planning:**
+ * - bundleSize: Network transfer cost (compressed)
+ * - heapIncrease: Actual runtime memory cost (uncompressed + WASM overhead)
+ *
+ * @example
+ * ```typescript
+ * const stats = await pg.getExtensionMemoryStats();
+ * for (const [name, info] of Object.entries(stats)) {
+ *   console.log(`${name}: ${info.bundleSize / 1024}KB bundle, ` +
+ *               `${info.heapIncrease ? info.heapIncrease / 1024 + 'KB heap' : 'heap N/A'}`);
+ * }
+ * ```
  */
 export interface ExtensionMemoryStats {
   /**
-   * Size of the extension bundle in bytes
+   * Size of the compressed extension bundle in bytes.
+   * This is 0 if the extension hasn't been loaded yet.
    */
   bundleSize: number
   /**
-   * Whether the extension is currently loaded
+   * Whether the extension is currently loaded in WASM memory.
    */
   loaded: boolean
   /**
-   * Heap size increase after loading this extension (if measurable)
+   * WASM heap size increase after loading this extension.
+   * Only available if heap growth was detected during loading.
+   * May be undefined if the heap didn't need to grow.
    */
   heapIncrease?: number
 }

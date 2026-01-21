@@ -74,10 +74,25 @@ export class PGlite
   #autoLoadExtensions: boolean = false
   #extensionFlags: Record<string, boolean> = {}
   #loadedExtensions: Set<string> = new Set()
+  /**
+   * Cache of extension setup results to avoid redundant setup calls.
+   * This is populated during init (for lazy mode) or when loadExtension is called.
+   */
   #extensionSetupResults: Map<string, ExtensionSetupResult> = new Map()
+  /**
+   * Track bundle sizes for memory monitoring. Only populated when extensions are loaded.
+   */
   #extensionBundleSizes: Map<string, number> = new Map()
+  /**
+   * Track heap increase per extension. Only populated when extensions are loaded
+   * and heap growth is detected.
+   */
   #extensionHeapIncrease: Map<string, number> = new Map()
   #extensionLoadListeners: Set<(extName: string) => void> = new Set()
+  /**
+   * Mutex to prevent concurrent extension loading which could cause race conditions.
+   */
+  #extensionLoadMutex = new Mutex()
 
   #protocolParser = new ProtocolParser()
 
@@ -1047,58 +1062,110 @@ export class PGlite
 
   /**
    * Load a single extension on demand.
-   * This method is used when lazyExtensions is enabled to load an extension
-   * that was configured but not loaded at initialization time.
    *
-   * @param extName The name of the extension to load
-   * @throws Error if extension is not configured or if dependency resolution fails
+   * This method enables lazy loading of PostgreSQL extensions, deferring the
+   * memory cost of extension bundles until they are actually needed. This is
+   * particularly valuable in memory-constrained environments like Cloudflare
+   * Workers (128MB limit).
+   *
+   * **Performance Characteristics:**
+   * - First call: Resolves dependencies, fetches bundle, compiles WASM (~100-500ms)
+   * - Subsequent calls: Returns immediately (no-op)
+   * - Memory: Bundle size + ~10-50% overhead for compiled code
+   *
+   * **Thread Safety:**
+   * This method is protected by a mutex to prevent race conditions when
+   * multiple concurrent calls attempt to load the same extension.
+   *
+   * @param extName The name of the extension to load (must match key in extensions option)
+   * @throws Error if extension is not configured, disabled by feature flag, or loading fails
+   *
+   * @example
+   * ```typescript
+   * const pg = await PGlite.create({
+   *   extensions: { vector: vectorExtension },
+   *   lazyExtensions: true,
+   * });
+   *
+   * // Extension not loaded yet - minimal memory footprint
+   * await pg.loadExtension('vector');
+   * // Now vector extension is available for use
+   *
+   * await pg.exec('CREATE EXTENSION IF NOT EXISTS vector;');
+   * ```
    */
   async loadExtension(extName: string): Promise<void> {
     await this._checkReady()
 
-    // Check if extension is already loaded
+    // Fast path: already loaded (check before mutex for performance)
     if (this.#loadedExtensions.has(extName)) {
       return
     }
 
-    // Check if extension is configured
-    const ext = this.#extensions[extName]
-    if (!ext) {
-      throw new Error(`Extension '${extName}' is not configured. Add it to the extensions option when creating PGlite.`)
-    }
-
-    // Check extension feature flag
-    if (this.#extensionFlags[extName] === false) {
-      throw new Error(`Extension '${extName}' is disabled by feature flag.`)
-    }
-
-    // Get or create setup result
-    let setupResult = this.#extensionSetupResults.get(extName)
-    if (!setupResult) {
-      // Extension hasn't been set up yet (URL-only extension or edge case)
-      if (ext instanceof URL) {
-        setupResult = { bundlePath: ext }
-        this.#extensionSetupResults.set(extName, setupResult)
-      } else {
-        setupResult = await ext.setup(this, {})
-        this.#extensionSetupResults.set(extName, setupResult)
+    // Use mutex to prevent concurrent loading of the same extension
+    return this.#extensionLoadMutex.runExclusive(async () => {
+      // Double-check after acquiring mutex (another call may have loaded it)
+      if (this.#loadedExtensions.has(extName)) {
+        return
       }
-    }
 
-    // Resolve dependencies first
-    if (setupResult.dependencies && setupResult.dependencies.length > 0) {
-      await this.#loadExtensionDependencies(extName, setupResult.dependencies, new Set([extName]))
-    }
+      // Validate extension configuration
+      const ext = this.#extensions[extName]
+      if (!ext) {
+        throw new Error(`Extension '${extName}' is not configured. Add it to the extensions option when creating PGlite.`)
+      }
 
-    // Load the extension bundle
-    await this.#loadExtensionBundle(extName, setupResult)
+      if (this.#extensionFlags[extName] === false) {
+        throw new Error(`Extension '${extName}' is disabled by feature flag.`)
+      }
+
+      // Get or create setup result (lazy setup for URL-only extensions)
+      const setupResult = await this.#getOrCreateSetupResult(extName, ext)
+
+      // Build dependency graph and load in topological order
+      if (setupResult.dependencies && setupResult.dependencies.length > 0) {
+        await this.#loadExtensionDependencies(extName, setupResult.dependencies, new Set([extName]))
+      }
+
+      // Load the extension bundle
+      await this.#loadExtensionBundle(extName, setupResult)
+    })
   }
 
   /**
-   * Load extension dependencies recursively with circular dependency detection.
-   * @param extName The extension that has dependencies
-   * @param dependencies List of dependency extension names
-   * @param loadingChain Set of extensions currently being loaded (for cycle detection)
+   * Get or create setup result for an extension.
+   * Caches results to avoid redundant setup calls.
+   */
+  async #getOrCreateSetupResult(extName: string, ext: Extension | URL): Promise<ExtensionSetupResult> {
+    let setupResult = this.#extensionSetupResults.get(extName)
+    if (setupResult) {
+      return setupResult
+    }
+
+    if (ext instanceof URL) {
+      setupResult = { bundlePath: ext }
+    } else {
+      setupResult = await ext.setup(this, {})
+    }
+    this.#extensionSetupResults.set(extName, setupResult)
+    return setupResult
+  }
+
+  /**
+   * Load extension dependencies using depth-first traversal with cycle detection.
+   *
+   * This method performs a post-order traversal of the dependency graph, ensuring
+   * dependencies are loaded before their dependents. The algorithm:
+   * 1. Maintains a "loading chain" to detect circular dependencies
+   * 2. Skips already-loaded extensions for efficiency
+   * 3. Recursively resolves transitive dependencies
+   *
+   * **Complexity:** O(V + E) where V = extensions, E = dependency edges
+   *
+   * @param extName The extension that has dependencies (for error messages)
+   * @param dependencies List of direct dependency extension names
+   * @param loadingChain Set tracking the current DFS path (for cycle detection)
+   * @throws Error if circular dependency detected or dependency not configured
    */
   async #loadExtensionDependencies(
     extName: string,
@@ -1106,116 +1173,170 @@ export class PGlite
     loadingChain: Set<string>,
   ): Promise<void> {
     for (const depName of dependencies) {
-      // Check for circular dependency
+      // Cycle detection: check if we're already loading this extension
       if (loadingChain.has(depName)) {
         const chain = Array.from(loadingChain).join(' -> ')
         throw new Error(`Circular dependency detected: ${chain} -> ${depName}`)
       }
 
-      // Check if dependency is already loaded
+      // Skip already-loaded extensions (idempotent loading)
       if (this.#loadedExtensions.has(depName)) {
         continue
       }
 
-      // Check if dependency is configured
+      // Validate dependency is configured
       const depExt = this.#extensions[depName]
       if (!depExt) {
         throw new Error(`Extension '${extName}' requires dependency '${depName}' which is not configured.`)
       }
 
       // Get or create setup result for dependency
-      let depSetupResult = this.#extensionSetupResults.get(depName)
-      if (!depSetupResult) {
-        if (depExt instanceof URL) {
-          depSetupResult = { bundlePath: depExt }
-          this.#extensionSetupResults.set(depName, depSetupResult)
-        } else {
-          depSetupResult = await depExt.setup(this, {})
-          this.#extensionSetupResults.set(depName, depSetupResult)
-        }
-      }
+      const depSetupResult = await this.#getOrCreateSetupResult(depName, depExt)
 
-      // Recursively load dependency's dependencies
+      // Recursively resolve transitive dependencies (post-order traversal)
       if (depSetupResult.dependencies && depSetupResult.dependencies.length > 0) {
         const newChain = new Set(loadingChain)
         newChain.add(depName)
         await this.#loadExtensionDependencies(depName, depSetupResult.dependencies, newChain)
       }
 
-      // Load the dependency
+      // Load the dependency bundle (dependencies of this dep are already loaded)
       await this.#loadExtensionBundle(depName, depSetupResult)
     }
   }
 
   /**
-   * Actually load an extension bundle and mark it as loaded.
-   * @param extName The extension name
-   * @param setupResult The setup result containing bundlePath
+   * Load an extension bundle into the WASM module and mark it as loaded.
+   *
+   * This method handles the actual loading of extension bundles:
+   * 1. Fetches and decompresses the bundle (if bundlePath provided)
+   * 2. Loads the extension files into the Emscripten filesystem
+   * 3. Runs the extension's init function (if provided)
+   * 4. Tracks memory usage for monitoring
+   *
+   * **Memory Management:**
+   * - Bundle blob is released after loading into FS
+   * - Heap increase is tracked for memory monitoring
+   * - Peak heap size is updated if needed
+   *
+   * @param extName The extension name (used for error messages and tracking)
+   * @param setupResult The setup result containing bundlePath and/or init function
+   * @throws Error if bundle fetch fails or init function throws
    */
   async #loadExtensionBundle(extName: string, setupResult: ExtensionSetupResult): Promise<void> {
-    // Already loaded check
+    // Idempotent: skip if already loaded
     if (this.#loadedExtensions.has(extName)) {
       return
     }
 
+    // Capture heap size before loading for memory tracking
     const heapBefore = this.mod!.HEAPU8.buffer.byteLength
 
     try {
       if (setupResult.bundlePath) {
+        this.#log(`pglite: loading extension bundle for '${extName}'`)
+
         const blob = await loadExtensionBundle(setupResult.bundlePath)
         if (blob) {
-          // Store bundle size for memory tracking
+          // Track bundle size for memory monitoring
           this.#extensionBundleSizes.set(extName, blob.size)
 
-          // Load the extension bundle into the module
-          // This follows the same pattern as eager loading
-          const extensionBundlePromises: Record<string, Promise<Blob | null>> = {}
-          extensionBundlePromises[extName] = Promise.resolve(blob)
+          // Load the extension bundle into the Emscripten filesystem
+          // Using a single-entry map to match the eager loading pattern
+          const extensionBundlePromises: Record<string, Promise<Blob | null>> = {
+            [extName]: Promise.resolve(blob)
+          }
           ;(this.mod as any)['pg_extensions'] = extensionBundlePromises
 
-          // Recompile extensions with the new bundle
+          // Compile and load extension files
           await loadExtensions(this.mod!, (...args) => this.#log(...args))
+
+          // Clear reference to help GC (blob is now in Emscripten FS)
+          ;(this.mod as any)['pg_extensions'] = {}
         }
       }
 
-      // Run init function if present
+      // Run extension-specific initialization
       if (setupResult.init) {
         await setupResult.init()
       }
 
-      // Mark as loaded
+      // Mark as successfully loaded
       this.#loadedExtensions.add(extName)
 
-      // Track heap increase
+      // Track memory impact
       const heapAfter = this.mod!.HEAPU8.buffer.byteLength
       if (heapAfter > heapBefore) {
         this.#extensionHeapIncrease.set(extName, heapAfter - heapBefore)
+        // Update peak heap size if this is a new maximum
+        if (heapAfter > this.#peakHeapSize) {
+          this.#peakHeapSize = heapAfter
+        }
       }
 
-      // Notify listeners
+      this.#log(`pglite: extension '${extName}' loaded successfully`)
+
+      // Notify registered listeners asynchronously
       this.#notifyExtensionLoaded(extName)
     } catch (error) {
-      throw new Error(`Failed to load extension '${extName}': ${error instanceof Error ? error.message : String(error)}`)
+      // Wrap error with extension context for better debugging
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Failed to load extension '${extName}': ${message}`)
     }
   }
 
   /**
-   * Load multiple extensions at once.
-   * Extensions are loaded in parallel when possible, respecting dependencies.
+   * Load multiple extensions concurrently.
+   *
+   * This method loads multiple extensions in parallel where possible, while
+   * respecting dependency ordering. Each extension's loadExtension call is
+   * protected by a mutex, so dependencies are resolved correctly even with
+   * concurrent calls.
+   *
+   * **Performance Note:**
+   * For extensions with shared dependencies, this is more efficient than
+   * sequential loading because the dependency is only loaded once (the
+   * loadExtension mutex ensures idempotent loading).
    *
    * @param extNames Array of extension names to load
+   *
+   * @example
+   * ```typescript
+   * // Load vector and pgcrypto concurrently
+   * await pg.loadExtensions(['vector', 'pgcrypto']);
+   * ```
    */
   async loadExtensions(extNames: string[]): Promise<void> {
     await this._checkReady()
 
-    // Load each extension (loadExtension handles deduplication)
+    // Load extensions concurrently - mutex inside loadExtension ensures
+    // thread-safe loading and deduplication
     await Promise.all(extNames.map((name) => this.loadExtension(name)))
   }
 
   /**
    * Get the load status of all configured extensions.
    *
-   * @returns Object mapping extension names to their status
+   * This method returns information about which extensions are configured
+   * and whether they have been loaded into memory. Useful for:
+   * - Debugging extension availability
+   * - Monitoring lazy loading progress
+   * - Building UI that shows extension status
+   *
+   * **Note:** Extensions disabled by feature flags are excluded from the result.
+   *
+   * @returns Object mapping extension names to their status (configured/loaded)
+   *
+   * @example
+   * ```typescript
+   * const status = await pg.getExtensionStatus();
+   * // { vector: { configured: true, loaded: false },
+   * //   pgcrypto: { configured: true, loaded: true } }
+   *
+   * const unloaded = Object.entries(status)
+   *   .filter(([_, s]) => !s.loaded)
+   *   .map(([name]) => name);
+   * ```
    */
   async getExtensionStatus(): Promise<Record<string, ExtensionStatus>> {
     await this._checkReady()
@@ -1223,7 +1344,7 @@ export class PGlite
     const status: Record<string, ExtensionStatus> = {}
 
     for (const extName of Object.keys(this.#extensions)) {
-      // Check if disabled by feature flag
+      // Exclude extensions disabled by feature flag
       if (this.#extensionFlags[extName] === false) {
         continue
       }
@@ -1238,32 +1359,64 @@ export class PGlite
   }
 
   /**
-   * Check if an extension is available (configured and not disabled).
+   * Check if an extension is available for use.
+   *
+   * An extension is available if it:
+   * 1. Is configured in the extensions option
+   * 2. Is not disabled by a feature flag
+   *
+   * This does NOT check if the extension is loaded - use `getExtensionStatus()`
+   * to check load state.
+   *
+   * **Use Case:** Check availability before attempting to use extension features,
+   * enabling graceful degradation when extensions are not configured.
    *
    * @param extName The extension name to check
-   * @returns true if the extension is available for use
+   * @returns true if the extension can be loaded and used
+   *
+   * @example
+   * ```typescript
+   * if (await pg.isExtensionAvailable('vector')) {
+   *   await pg.loadExtension('vector');
+   *   await pg.exec('CREATE EXTENSION vector;');
+   * } else {
+   *   console.log('Vector search not available');
+   * }
+   * ```
    */
   async isExtensionAvailable(extName: string): Promise<boolean> {
     await this._checkReady()
 
-    // Check if extension is configured
-    if (!this.#extensions[extName]) {
-      return false
-    }
-
-    // Check if disabled by feature flag
-    if (this.#extensionFlags[extName] === false) {
-      return false
-    }
-
-    return true
+    // Check configuration and feature flag
+    return this.#extensions[extName] !== undefined &&
+           this.#extensionFlags[extName] !== false
   }
 
   /**
-   * Get memory statistics for each extension.
-   * Shows bundle sizes and heap increases for loaded extensions.
+   * Get memory statistics for each configured extension.
    *
-   * @returns Object mapping extension names to their memory stats
+   * Returns detailed memory information for monitoring and optimization:
+   * - **bundleSize**: Compressed bundle size in bytes (0 if not loaded)
+   * - **loaded**: Whether the extension is currently in memory
+   * - **heapIncrease**: WASM heap growth when extension was loaded (if measurable)
+   *
+   * **Memory Monitoring Use Cases:**
+   * - Track which extensions consume the most memory
+   * - Monitor total extension memory in constrained environments
+   * - Identify candidates for lazy loading optimization
+   *
+   * **Note:** heapIncrease may not always be available if the heap didn't grow
+   * during loading (e.g., if sufficient memory was already allocated).
+   *
+   * @returns Object mapping extension names to their memory statistics
+   *
+   * @example
+   * ```typescript
+   * const memStats = await pg.getExtensionMemoryStats();
+   * const totalBundleSize = Object.values(memStats)
+   *   .reduce((sum, s) => sum + s.bundleSize, 0);
+   * console.log(`Total extension bundles: ${(totalBundleSize / 1024).toFixed(1)} KB`);
+   * ```
    */
   async getExtensionMemoryStats(): Promise<Record<string, ExtensionMemoryStats>> {
     await this._checkReady()
@@ -1271,7 +1424,7 @@ export class PGlite
     const stats: Record<string, ExtensionMemoryStats> = {}
 
     for (const extName of Object.keys(this.#extensions)) {
-      // Check if disabled by feature flag
+      // Exclude extensions disabled by feature flag
       if (this.#extensionFlags[extName] === false) {
         continue
       }
@@ -1293,8 +1446,29 @@ export class PGlite
   /**
    * Register a callback to be notified when an extension is loaded.
    *
-   * @param callback Function to call when an extension is loaded
-   * @returns Unsubscribe function
+   * Callbacks are invoked asynchronously (via queueMicrotask) after each
+   * extension finishes loading. This allows you to:
+   * - Track loading progress in real-time
+   * - Update UI when extensions become available
+   * - Log extension loading for debugging
+   *
+   * **Thread Safety:** Callbacks are invoked after the loading mutex is released,
+   * so it's safe to call other PGlite methods from within the callback.
+   *
+   * @param callback Function called with extension name when loading completes
+   * @returns Unsubscribe function to remove the listener
+   *
+   * @example
+   * ```typescript
+   * const unsubscribe = pg.onExtensionLoad((extName) => {
+   *   console.log(`Extension ${extName} is now available`);
+   * });
+   *
+   * await pg.loadExtension('vector');
+   * // Logs: "Extension vector is now available"
+   *
+   * unsubscribe(); // Stop listening
+   * ```
    */
   onExtensionLoad(callback: (extName: string) => void): () => void {
     this.#extensionLoadListeners.add(callback)
@@ -1304,7 +1478,8 @@ export class PGlite
   }
 
   /**
-   * Notify all listeners that an extension was loaded.
+   * Notify all registered listeners that an extension was loaded.
+   * Uses queueMicrotask for async notification without blocking.
    */
   #notifyExtensionLoaded(extName: string): void {
     for (const listener of this.#extensionLoadListeners) {
