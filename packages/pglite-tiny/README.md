@@ -18,6 +18,7 @@ Minimal PGlite variant optimized for Cloudflare Workers and memory-constrained e
 - Parameterized queries
 - Transactions
 - UTF-8 text encoding
+- JSON/JSONB support
 
 ## Features Excluded (to minimize size)
 
@@ -134,25 +135,126 @@ This variant is ideal for:
 
 ## Building from Source
 
-The tiny WASM is built using `build-pglite-tiny.sh` in Docker:
+The tiny WASM binary is built using Docker with special configuration flags. This section documents the complete build process.
+
+### Prerequisites
+
+- Docker installed and running
+- ~10GB disk space for build artifacts
+- ~30 minutes build time (varies by machine)
+
+### Build Command
 
 ```bash
 cd packages/pglite/postgres-pglite
 ./build-pglite-tiny.sh
 ```
 
-Build configuration:
-- `PGLITE_TINY=true` - Enables minimal build mode
-- `PGLITE_UTF8_ONLY=true` - Excludes charset converters (~1.8MB savings)
-- `SKIP_CONTRIB=true` - Skips all extensions (~2-3MB savings)
-- `SNOWBALL_LANGUAGES=""` - No text search stemmers (~500KB savings)
-- `-Oz` optimization with closure compiler for minimum size
+### Build Configuration
+
+The `build-pglite-tiny.sh` script sets these environment variables:
+
+| Variable | Value | Description |
+|----------|-------|-------------|
+| `PGLITE_TINY` | `true` | Enables minimal build mode |
+| `PGLITE_UTF8_ONLY` | `true` | Excludes charset converters (~1.8MB savings) |
+| `SKIP_CONTRIB` | `true` | Skips all contrib extensions (~2-3MB savings) |
+| `SNOWBALL_LANGUAGES` | `""` | No text search stemmers (~500KB savings) |
+| `DEBUG` | `false` | Release mode for size optimization |
+| `TOTAL_MEMORY` | `32MB` | Initial Emscripten memory allocation |
+| `CMA_MB` | `4` | Minimal contiguous memory area |
+
+### Compiler Optimization Flags
+
+```bash
+# Compile flags for minimum size
+COPTS="-Oz -flto -fno-exceptions -fno-rtti"
+
+# Linker flags with closure compiler
+LOPTS="-Oz -flto -fno-exceptions --closure=1 -sASSERTIONS=0 -sEVAL_CTORS=2"
+```
+
+### PostgreSQL Configure Options
+
+The tiny build disables these PostgreSQL features at configure time:
+
+```bash
+--without-zlib          # No compression support
+--without-libxml        # No XML support
+--without-libxslt       # No XSLT support
+--without-uuid          # No UUID generation
+--without-openssl       # No SSL/crypto
+--disable-nls           # No localization
+--disable-thread-safety # Single-threaded only
+```
+
+### Post-Build Steps
+
+After building, copy the output files to the release directory:
+
+```bash
+# Build outputs are in /tmp/sdk/dist/pglite-web/
+cp /tmp/sdk/dist/pglite-web/pglite.wasm packages/pglite-tiny/release/
+cp /tmp/sdk/dist/pglite-web/pglite.data packages/pglite-tiny/release/
+cp /tmp/sdk/dist/pglite-web/pglite.js packages/pglite-tiny/release/
+
+# Remove symlinks first if they exist
+rm -f packages/pglite-tiny/release/pglite.*
+```
 
 ### Current Status
 
 The release directory currently contains symlinks to the standard pglite build
 as placeholders. After running the Docker build, actual tiny WASM files will
 replace these symlinks.
+
+## Size Optimization Notes
+
+### Current Size Breakdown (Full PGlite)
+
+| Component | Size | Notes |
+|-----------|------|-------|
+| pglite.wasm | ~8.5MB | Core PostgreSQL WASM binary |
+| pglite.data | ~4.7MB | Filesystem bundle (share/lib/password) |
+| Total | ~13MB | Before optimization |
+
+### Optimization Opportunities
+
+1. **Charset Converters** (~1.8MB savings)
+   - Full build includes converters for all PostgreSQL-supported encodings
+   - Tiny build: UTF-8 only (`PGLITE_UTF8_ONLY=true`)
+
+2. **Snowball Stemmers** (~500KB savings)
+   - Full build includes 27 language stemmers for full-text search
+   - Tiny build: No stemmers (`SNOWBALL_LANGUAGES=""`)
+
+3. **Contrib Extensions** (~2-3MB savings)
+   - Full build includes pgvector, hstore, pgcrypto, etc.
+   - Tiny build: None (`SKIP_CONTRIB=true`)
+
+4. **Compiler Optimization** (~10-20% reduction)
+   - `-Oz` instead of `-O2` for size over speed
+   - `--closure=1` for JavaScript minification
+   - `-flto` for link-time optimization
+
+### Future Optimization Ideas
+
+1. **Custom PostgreSQL Fork**
+   - Remove unused system catalog entries
+   - Compile out geometric/network type handlers
+   - Reduce error message string table
+
+2. **Selective Type System**
+   - Compile only required type handlers
+   - Remove unused operator implementations
+
+3. **Lazy Loading**
+   - Split data bundle into core/optional
+   - Load dictionaries on demand
+
+4. **WASM Compression**
+   - Brotli compression for smaller network transfer
+   - Client-side decompression before instantiation
 
 ## API Reference
 
@@ -164,10 +266,20 @@ This package re-exports the full PGlite API from `@dotdo/pglite`. See the [main 
 import type {
   PGliteOptions,
   PGliteInterface,
+  PGliteInterfaceExtensions,
   Results,
   Row,
   QueryOptions,
   Transaction,
+  ExecProtocolOptions,
+  ParserOptions,
+  DebugLevel,
+  FilesystemType,
+  Extension,
+  ExtensionSetupResult,
+  ExtensionNamespace,
+  MemorySnapshot,
+  MemoryStats,
 } from '@dotdo/pglite-tiny'
 ```
 
@@ -178,7 +290,37 @@ import { VERSION, VARIANT, TINY_MEMORY_BUDGET } from '@dotdo/pglite-tiny'
 
 console.log(VARIANT) // 'tiny'
 console.log(TINY_MEMORY_BUDGET.workersLimit) // 134217728 (128MB)
+console.log(TINY_MEMORY_BUDGET.wasmBinary)   // 3145728 (3MB target)
+console.log(TINY_MEMORY_BUDGET.dataBundle)   // 2097152 (2MB target)
 ```
+
+### Utility Functions
+
+```typescript
+import { uuid, formatQuery } from '@dotdo/pglite-tiny'
+
+// Generate a UUID (application-side, since uuid-ossp is excluded)
+const id = uuid()
+
+// Format a query for debugging
+const formatted = formatQuery('SELECT * FROM users WHERE id = $1', [123])
+```
+
+## Testing
+
+Run tests to verify the implementation:
+
+```bash
+cd packages/pglite/packages/pglite-tiny
+npx vitest run --reporter=verbose
+```
+
+Tests are organized into:
+- **Bundle size tests**: Verify WASM/data files meet size targets (skipped for interim symlinks)
+- **Core SQL tests**: Verify SELECT, INSERT, UPDATE, DELETE operations
+- **Type tests**: Verify PostgreSQL type handling
+- **Memory tests**: Verify bounded memory usage
+- **Extension tests**: Verify extensions are properly excluded
 
 ## License
 
