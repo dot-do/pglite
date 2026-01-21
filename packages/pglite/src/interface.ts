@@ -126,6 +126,11 @@ export interface ExtensionSetupResult<TNamespace = unknown> {
   bundlePath?: URL
   init?: () => Promise<void>
   close?: () => Promise<void>
+  /**
+   * List of extension names that must be loaded before this extension.
+   * Used for automatic dependency resolution in lazy loading.
+   */
+  dependencies?: string[]
 }
 
 export type ExtensionSetup<TNamespace = unknown> = (
@@ -240,6 +245,56 @@ export interface PGliteOptions<TExtensions extends Extensions = Extensions> {
    * CRITICAL: RNG is automatically reseeded after restore for security.
    */
   memorySnapshot?: MemorySnapshot
+  /**
+   * When true, extension bundles are not loaded at initialization time.
+   * Extensions are loaded on-demand when CREATE EXTENSION is called or
+   * when explicitly loaded via loadExtension().
+   * This can significantly reduce initial memory usage.
+   */
+  lazyExtensions?: boolean
+  /**
+   * When true (and lazyExtensions is enabled), extensions are automatically
+   * loaded when extension-specific SQL syntax is detected.
+   * Requires SQL parsing to detect extension usage.
+   */
+  autoLoadExtensions?: boolean
+  /**
+   * Feature flags to control extension availability.
+   * When a flag is false, the extension will not be available even if configured.
+   */
+  extensionFlags?: Record<string, boolean>
+}
+
+/**
+ * Status of a configured extension
+ */
+export interface ExtensionStatus {
+  /**
+   * Whether the extension is configured in PGliteOptions
+   */
+  configured: boolean
+  /**
+   * Whether the extension bundle has been loaded into memory
+   */
+  loaded: boolean
+}
+
+/**
+ * Memory statistics for a single extension
+ */
+export interface ExtensionMemoryStats {
+  /**
+   * Size of the extension bundle in bytes
+   */
+  bundleSize: number
+  /**
+   * Whether the extension is currently loaded
+   */
+  loaded: boolean
+  /**
+   * Heap size increase after loading this extension (if measurable)
+   */
+  heapIncrease?: number
 }
 
 export type PGliteInterface<T extends Extensions = Extensions> =

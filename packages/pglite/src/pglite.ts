@@ -13,7 +13,11 @@ import type {
   DebugLevel,
   ExecProtocolOptions,
   ExecProtocolResult,
+  Extension,
+  ExtensionMemoryStats,
+  ExtensionSetupResult,
   Extensions,
+  ExtensionStatus,
   MemorySnapshot,
   MemoryStats,
   PGliteInterface,
@@ -66,6 +70,14 @@ export class PGlite
 
   #extensions: Extensions
   #extensionsClose: Array<() => Promise<void>> = []
+  #lazyExtensions: boolean = false
+  #autoLoadExtensions: boolean = false
+  #extensionFlags: Record<string, boolean> = {}
+  #loadedExtensions: Set<string> = new Set()
+  #extensionSetupResults: Map<string, ExtensionSetupResult> = new Map()
+  #extensionBundleSizes: Map<string, number> = new Map()
+  #extensionHeapIncrease: Map<string, number> = new Map()
+  #extensionLoadListeners: Set<(extName: string) => void> = new Set()
 
   #protocolParser = new ProtocolParser()
 
@@ -154,6 +166,21 @@ export class PGlite
 
     // Save the extensions for later use
     this.#extensions = options.extensions ?? {}
+
+    // Enable lazy extension loading if requested
+    if (options?.lazyExtensions !== undefined) {
+      this.#lazyExtensions = options.lazyExtensions
+    }
+
+    // Enable auto-loading of extensions when SQL syntax is detected
+    if (options?.autoLoadExtensions !== undefined) {
+      this.#autoLoadExtensions = options.autoLoadExtensions
+    }
+
+    // Save extension feature flags
+    if (options?.extensionFlags !== undefined) {
+      this.#extensionFlags = options.extensionFlags
+    }
 
     // Initialize the database, and store the promise so we can wait for it to be ready
     this.waitReady = this.#init(options ?? {})
@@ -360,30 +387,67 @@ export class PGlite
     // - namespaceObj: The namespace object to attach to the PGlite instance
     // - init: A function to initialize the extension/plugin after the database is ready
     // - close: A function to close/tidy-up the extension/plugin when the database is closed
+    // - dependencies: List of extension names that must be loaded first
+    //
+    // When lazyExtensions is enabled, we defer loading the extension bundles
+    // until they are explicitly requested or when CREATE EXTENSION is called.
     for (const [extName, ext] of Object.entries(this.#extensions)) {
+      // Check extension feature flag - if false, skip this extension
+      if (this.#extensionFlags[extName] === false) {
+        continue
+      }
+
       if (ext instanceof URL) {
-        // Extension with only a URL to a bundle
-        extensionBundlePromises[extName] = loadExtensionBundle(ext)
+        if (this.#lazyExtensions) {
+          // Store URL for lazy loading later
+          this.#extensionSetupResults.set(extName, { bundlePath: ext })
+        } else {
+          // Extension with only a URL to a bundle - load immediately
+          extensionBundlePromises[extName] = loadExtensionBundle(ext)
+          this.#loadedExtensions.add(extName)
+        }
       } else {
-        // Extension with JS setup function
-        const extRet = await ext.setup(this, emscriptenOpts)
-        if (extRet.emscriptenOpts) {
-          emscriptenOpts = extRet.emscriptenOpts
-        }
-        if (extRet.namespaceObj) {
-          const instance = this as any
-          instance[extName] = extRet.namespaceObj
-        }
-        if (extRet.bundlePath) {
-          extensionBundlePromises[extName] = loadExtensionBundle(
-            extRet.bundlePath,
-          ) // Don't await here, this is parallel
-        }
-        if (extRet.init) {
-          extensionInitFns.push(extRet.init)
-        }
-        if (extRet.close) {
-          this.#extensionsClose.push(extRet.close)
+        if (this.#lazyExtensions) {
+          // In lazy mode, we call setup but don't load bundles yet
+          // This allows us to get the bundlePath and dependencies info
+          const extRet = await ext.setup(this, emscriptenOpts)
+          this.#extensionSetupResults.set(extName, extRet)
+
+          if (extRet.emscriptenOpts) {
+            emscriptenOpts = extRet.emscriptenOpts
+          }
+          if (extRet.namespaceObj) {
+            const instance = this as any
+            instance[extName] = extRet.namespaceObj
+          }
+          // Don't load bundle in lazy mode - defer until needed
+          if (extRet.close) {
+            this.#extensionsClose.push(extRet.close)
+          }
+        } else {
+          // Extension with JS setup function - load immediately
+          const extRet = await ext.setup(this, emscriptenOpts)
+          this.#extensionSetupResults.set(extName, extRet)
+
+          if (extRet.emscriptenOpts) {
+            emscriptenOpts = extRet.emscriptenOpts
+          }
+          if (extRet.namespaceObj) {
+            const instance = this as any
+            instance[extName] = extRet.namespaceObj
+          }
+          if (extRet.bundlePath) {
+            extensionBundlePromises[extName] = loadExtensionBundle(
+              extRet.bundlePath,
+            ) // Don't await here, this is parallel
+            this.#loadedExtensions.add(extName)
+          }
+          if (extRet.init) {
+            extensionInitFns.push(extRet.init)
+          }
+          if (extRet.close) {
+            this.#extensionsClose.push(extRet.close)
+          }
         }
       }
     }
@@ -982,6 +1046,282 @@ export class PGlite
   }
 
   /**
+   * Load a single extension on demand.
+   * This method is used when lazyExtensions is enabled to load an extension
+   * that was configured but not loaded at initialization time.
+   *
+   * @param extName The name of the extension to load
+   * @throws Error if extension is not configured or if dependency resolution fails
+   */
+  async loadExtension(extName: string): Promise<void> {
+    await this._checkReady()
+
+    // Check if extension is already loaded
+    if (this.#loadedExtensions.has(extName)) {
+      return
+    }
+
+    // Check if extension is configured
+    const ext = this.#extensions[extName]
+    if (!ext) {
+      throw new Error(`Extension '${extName}' is not configured. Add it to the extensions option when creating PGlite.`)
+    }
+
+    // Check extension feature flag
+    if (this.#extensionFlags[extName] === false) {
+      throw new Error(`Extension '${extName}' is disabled by feature flag.`)
+    }
+
+    // Get or create setup result
+    let setupResult = this.#extensionSetupResults.get(extName)
+    if (!setupResult) {
+      // Extension hasn't been set up yet (URL-only extension or edge case)
+      if (ext instanceof URL) {
+        setupResult = { bundlePath: ext }
+        this.#extensionSetupResults.set(extName, setupResult)
+      } else {
+        setupResult = await ext.setup(this, {})
+        this.#extensionSetupResults.set(extName, setupResult)
+      }
+    }
+
+    // Resolve dependencies first
+    if (setupResult.dependencies && setupResult.dependencies.length > 0) {
+      await this.#loadExtensionDependencies(extName, setupResult.dependencies, new Set([extName]))
+    }
+
+    // Load the extension bundle
+    await this.#loadExtensionBundle(extName, setupResult)
+  }
+
+  /**
+   * Load extension dependencies recursively with circular dependency detection.
+   * @param extName The extension that has dependencies
+   * @param dependencies List of dependency extension names
+   * @param loadingChain Set of extensions currently being loaded (for cycle detection)
+   */
+  async #loadExtensionDependencies(
+    extName: string,
+    dependencies: string[],
+    loadingChain: Set<string>,
+  ): Promise<void> {
+    for (const depName of dependencies) {
+      // Check for circular dependency
+      if (loadingChain.has(depName)) {
+        const chain = Array.from(loadingChain).join(' -> ')
+        throw new Error(`Circular dependency detected: ${chain} -> ${depName}`)
+      }
+
+      // Check if dependency is already loaded
+      if (this.#loadedExtensions.has(depName)) {
+        continue
+      }
+
+      // Check if dependency is configured
+      const depExt = this.#extensions[depName]
+      if (!depExt) {
+        throw new Error(`Extension '${extName}' requires dependency '${depName}' which is not configured.`)
+      }
+
+      // Get or create setup result for dependency
+      let depSetupResult = this.#extensionSetupResults.get(depName)
+      if (!depSetupResult) {
+        if (depExt instanceof URL) {
+          depSetupResult = { bundlePath: depExt }
+          this.#extensionSetupResults.set(depName, depSetupResult)
+        } else {
+          depSetupResult = await depExt.setup(this, {})
+          this.#extensionSetupResults.set(depName, depSetupResult)
+        }
+      }
+
+      // Recursively load dependency's dependencies
+      if (depSetupResult.dependencies && depSetupResult.dependencies.length > 0) {
+        const newChain = new Set(loadingChain)
+        newChain.add(depName)
+        await this.#loadExtensionDependencies(depName, depSetupResult.dependencies, newChain)
+      }
+
+      // Load the dependency
+      await this.#loadExtensionBundle(depName, depSetupResult)
+    }
+  }
+
+  /**
+   * Actually load an extension bundle and mark it as loaded.
+   * @param extName The extension name
+   * @param setupResult The setup result containing bundlePath
+   */
+  async #loadExtensionBundle(extName: string, setupResult: ExtensionSetupResult): Promise<void> {
+    // Already loaded check
+    if (this.#loadedExtensions.has(extName)) {
+      return
+    }
+
+    const heapBefore = this.mod!.HEAPU8.buffer.byteLength
+
+    try {
+      if (setupResult.bundlePath) {
+        const blob = await loadExtensionBundle(setupResult.bundlePath)
+        if (blob) {
+          // Store bundle size for memory tracking
+          this.#extensionBundleSizes.set(extName, blob.size)
+
+          // Load the extension bundle into the module
+          // This follows the same pattern as eager loading
+          const extensionBundlePromises: Record<string, Promise<Blob | null>> = {}
+          extensionBundlePromises[extName] = Promise.resolve(blob)
+          ;(this.mod as any)['pg_extensions'] = extensionBundlePromises
+
+          // Recompile extensions with the new bundle
+          await loadExtensions(this.mod!, (...args) => this.#log(...args))
+        }
+      }
+
+      // Run init function if present
+      if (setupResult.init) {
+        await setupResult.init()
+      }
+
+      // Mark as loaded
+      this.#loadedExtensions.add(extName)
+
+      // Track heap increase
+      const heapAfter = this.mod!.HEAPU8.buffer.byteLength
+      if (heapAfter > heapBefore) {
+        this.#extensionHeapIncrease.set(extName, heapAfter - heapBefore)
+      }
+
+      // Notify listeners
+      this.#notifyExtensionLoaded(extName)
+    } catch (error) {
+      throw new Error(`Failed to load extension '${extName}': ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /**
+   * Load multiple extensions at once.
+   * Extensions are loaded in parallel when possible, respecting dependencies.
+   *
+   * @param extNames Array of extension names to load
+   */
+  async loadExtensions(extNames: string[]): Promise<void> {
+    await this._checkReady()
+
+    // Load each extension (loadExtension handles deduplication)
+    await Promise.all(extNames.map((name) => this.loadExtension(name)))
+  }
+
+  /**
+   * Get the load status of all configured extensions.
+   *
+   * @returns Object mapping extension names to their status
+   */
+  async getExtensionStatus(): Promise<Record<string, ExtensionStatus>> {
+    await this._checkReady()
+
+    const status: Record<string, ExtensionStatus> = {}
+
+    for (const extName of Object.keys(this.#extensions)) {
+      // Check if disabled by feature flag
+      if (this.#extensionFlags[extName] === false) {
+        continue
+      }
+
+      status[extName] = {
+        configured: true,
+        loaded: this.#loadedExtensions.has(extName),
+      }
+    }
+
+    return status
+  }
+
+  /**
+   * Check if an extension is available (configured and not disabled).
+   *
+   * @param extName The extension name to check
+   * @returns true if the extension is available for use
+   */
+  async isExtensionAvailable(extName: string): Promise<boolean> {
+    await this._checkReady()
+
+    // Check if extension is configured
+    if (!this.#extensions[extName]) {
+      return false
+    }
+
+    // Check if disabled by feature flag
+    if (this.#extensionFlags[extName] === false) {
+      return false
+    }
+
+    return true
+  }
+
+  /**
+   * Get memory statistics for each extension.
+   * Shows bundle sizes and heap increases for loaded extensions.
+   *
+   * @returns Object mapping extension names to their memory stats
+   */
+  async getExtensionMemoryStats(): Promise<Record<string, ExtensionMemoryStats>> {
+    await this._checkReady()
+
+    const stats: Record<string, ExtensionMemoryStats> = {}
+
+    for (const extName of Object.keys(this.#extensions)) {
+      // Check if disabled by feature flag
+      if (this.#extensionFlags[extName] === false) {
+        continue
+      }
+
+      const loaded = this.#loadedExtensions.has(extName)
+      const bundleSize = this.#extensionBundleSizes.get(extName) ?? 0
+      const heapIncrease = this.#extensionHeapIncrease.get(extName)
+
+      stats[extName] = {
+        bundleSize,
+        loaded,
+        ...(heapIncrease !== undefined ? { heapIncrease } : {}),
+      }
+    }
+
+    return stats
+  }
+
+  /**
+   * Register a callback to be notified when an extension is loaded.
+   *
+   * @param callback Function to call when an extension is loaded
+   * @returns Unsubscribe function
+   */
+  onExtensionLoad(callback: (extName: string) => void): () => void {
+    this.#extensionLoadListeners.add(callback)
+    return () => {
+      this.#extensionLoadListeners.delete(callback)
+    }
+  }
+
+  /**
+   * Notify all listeners that an extension was loaded.
+   */
+  #notifyExtensionLoaded(extName: string): void {
+    for (const listener of this.#extensionLoadListeners) {
+      queueMicrotask(() => listener(extName))
+    }
+  }
+
+  /**
+   * Internal log function
+   */
+  #log(...args: any[]) {
+    if (this.debug > 0) {
+      console.log(...args)
+    }
+  }
+
+  /**
    * Close the database
    * @returns A promise that resolves when the database is closed
    */
@@ -1272,15 +1612,6 @@ export class PGlite
       doSync()
     } else {
       await doSync()
-    }
-  }
-
-  /**
-   * Internal log function
-   */
-  #log(...args: any[]) {
-    if (this.debug > 0) {
-      console.log(...args)
     }
   }
 

@@ -350,7 +350,7 @@ describe('Lazy Extension Loading', () => {
    * provide clear and helpful error messages.
    */
   describe('error handling', () => {
-    it.fails('should throw clear error when loading unconfigured extension', async () => {
+    it('should throw clear error when loading unconfigured extension', async () => {
       const { PGlite } = await import('../dist/index.js')
 
       const pg = await PGlite.create({
@@ -368,7 +368,7 @@ describe('Lazy Extension Loading', () => {
       await pg.close()
     })
 
-    it.fails('should provide helpful error when extension bundle fetch fails', async () => {
+    it('should provide helpful error when extension bundle fetch fails', async () => {
       const { PGlite } = await import('../dist/index.js')
 
       // Create extension with invalid bundle path
@@ -410,7 +410,7 @@ describe('Lazy Extension Loading', () => {
       await pg.close()
     })
 
-    it.fails('should support graceful degradation with isExtensionAvailable()', async () => {
+    it('should support graceful degradation with isExtensionAvailable()', async () => {
       const { PGlite } = await import('../dist/index.js')
 
       const pg = await PGlite.create({
@@ -475,7 +475,7 @@ describe('Lazy Extension Loading', () => {
       await pg.close()
     })
 
-    it.fails('should throw error if dependency is not configured', async () => {
+    it('should throw error if dependency is not configured', async () => {
       const { PGlite } = await import('../dist/index.js')
 
       const earthdistanceWithDeps: Extension = {
@@ -502,7 +502,7 @@ describe('Lazy Extension Loading', () => {
       await pg.close()
     })
 
-    it.fails('should handle circular dependency detection', async () => {
+    it('should handle circular dependency detection', async () => {
       const { PGlite } = await import('../dist/index.js')
 
       // Create extensions with circular dependency (shouldn't happen in practice,
@@ -655,7 +655,7 @@ describe('Lazy Extension Loading', () => {
       fs.rmSync(dataDir, { recursive: true, force: true })
     })
 
-    it.fails('should support conditional extension loading based on feature flags', async () => {
+    it('should support conditional extension loading based on feature flags', async () => {
       const { PGlite } = await import('../dist/index.js')
 
       const mockVector = createMockExtension('vector')
