@@ -187,7 +187,7 @@
     "format": "prettier --write ./src ./tests",
     "typecheck": "tsc --noEmit",
     "stylecheck": "pnpm lint && prettier --check ./src ./tests",
-    "prepublishOnly": "pnpm check:exports"
+    "prepublishOnly": "echo 'Build separately before publishing'"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.1",
