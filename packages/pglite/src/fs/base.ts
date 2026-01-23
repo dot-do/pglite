@@ -172,7 +172,13 @@ export type FsStats = {
 // Emscripten types that are not properly typed in @types/emscripten
 type EmscriptenDeviceSpec = number | undefined
 
-type EmscriptenFileSystem = Emscripten.FileSystemType & {
+type EmscriptenFileSystem = Omit<Emscripten.FileSystemType, 'syncfs'> & {
+  // Override syncfs signature - @types/emscripten has wrong type (expects function, but Emscripten uses boolean)
+  syncfs: (
+    mount: FS.Mount,
+    populate: boolean,
+    done: (err?: number | null) => unknown,
+  ) => void
   createNode: (
     parent: FSNode | null,
     name: string,
