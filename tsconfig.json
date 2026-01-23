@@ -28,5 +28,13 @@
     "strictNullChecks": true,
     "target": "ES2020"
   },
-  "include": ["eslint.config.js"]
+  "exclude": [
+    "eslint.config.js",
+    "**/eslint.config.js",
+    "postgres-pglite/**",
+    "docs/**",
+    "examples/**",
+    "**/node_modules/**",
+    "**/dist/**"
+  ]
 }

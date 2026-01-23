@@ -174,10 +174,10 @@ function testForMessage<T extends BackendMessage>(
     // Convert Uint8Array to ArrayBuffer safely (handles views/subarrays)
     const buf =
       buffer instanceof Uint8Array
-        ? buffer.buffer.slice(
+        ? (buffer.buffer.slice(
             buffer.byteOffset,
             buffer.byteOffset + buffer.byteLength,
-          )
+          ) as ArrayBuffer)
         : buffer
     const messages = await parseBuffers([buf])
     const [lastMessage] = messages
@@ -235,7 +235,7 @@ const expectedNotificationResponseMessage: NotificationResponseMessage = {
 }
 
 const parseBuffers = async (
-  buffers: ArrayBuffer[],
+  buffers: (ArrayBuffer | ArrayBufferView)[],
 ): Promise<BackendMessage[]> => {
   const parser = new Parser()
   const msgs: BackendMessage[] = []
@@ -518,7 +518,7 @@ describe('PgPacketStream', () => {
     const fullBuffer = fullBufferView.buffer
 
     it('parses when full buffer comes in', async () => {
-      const messages = await parseBuffers([fullBuffer])
+      const messages = await parseBuffers([fullBufferView])
       const message = messages[0] as DataRowMessage
       expect(message.fields.length).toBe(5)
       expect(message.fields[0]).toBe(null)
@@ -541,7 +541,7 @@ describe('PgPacketStream', () => {
         new Uint8Array(fullBuffer, firstBufferView.byteLength),
       )
 
-      const messages = await parseBuffers([fullBuffer])
+      const messages = await parseBuffers([fullBufferView])
       const message = messages[0] as DataRowMessage
       expect(message.fields.length).toBe(5)
       expect(message.fields[0]).toBe(null)

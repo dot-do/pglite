@@ -166,8 +166,15 @@ const buffers = {
     return list.join(true, 'H')
   },
 
-  copyData: (bytes: ArrayBuffer) => {
-    return new BufferList().add(bytes).join(true, 'd')
+  copyData: (bytes: ArrayBuffer | Uint8Array) => {
+    const buf =
+      bytes instanceof Uint8Array
+        ? (bytes.buffer.slice(
+            bytes.byteOffset,
+            bytes.byteOffset + bytes.byteLength,
+          ) as ArrayBuffer)
+        : bytes
+    return new BufferList().add(buf).join(true, 'd')
   },
 
   copyDone: () => {

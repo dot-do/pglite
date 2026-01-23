@@ -277,7 +277,7 @@ describe('serializer', () => {
 
   describe('copy messages', () => {
     it('builds copyFromChunk', () => {
-      const actual = serialize.copyData(new Uint8Array([1, 2, 3]))
+      const actual = serialize.copyData(new Uint8Array([1, 2, 3]).buffer as ArrayBuffer)
       const expected = new BufferList()
         .add(new Uint8Array([1, 2, 3]))
         .join(true, 'd')

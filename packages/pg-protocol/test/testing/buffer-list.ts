@@ -3,8 +3,16 @@ import { byteLengthUtf8 } from '../../src/string-utils'
 export default class BufferList {
   constructor(public buffers: ArrayBuffer[] = []) {}
 
-  public add(buffer: ArrayBuffer, front?: boolean) {
-    this.buffers[front ? 'unshift' : 'push'](buffer)
+  public add(buffer: ArrayBuffer | Uint8Array, front?: boolean) {
+    // Convert Uint8Array to ArrayBuffer if needed
+    const buf =
+      buffer instanceof Uint8Array
+        ? (buffer.buffer.slice(
+            buffer.byteOffset,
+            buffer.byteOffset + buffer.byteLength,
+          ) as ArrayBuffer)
+        : buffer
+    this.buffers[front ? 'unshift' : 'push'](buf)
     return this
   }
 
@@ -73,7 +81,7 @@ export default class BufferList {
     return new Uint8Array(result)
   }
 
-  public static concat(...args: ArrayBuffer[]): Uint8Array {
+  public static concat(...args: (ArrayBuffer | Uint8Array)[]): Uint8Array {
     const total = new BufferList()
     for (let i = 0; i < args.length; i++) {
       total.add(args[i])
