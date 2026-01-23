@@ -21,6 +21,7 @@ import type {
   MemorySnapshot,
   MemoryStats,
   PGliteInterface,
+  PGliteInterfaceBase,
   PGliteInterfaceExtensions,
   PGliteOptions,
   Transaction,
@@ -45,7 +46,7 @@ import {
 
 export class PGlite
   extends BasePGlite
-  implements PGliteInterface, AsyncDisposable
+  implements PGliteInterfaceBase, AsyncDisposable
 {
   fs?: Filesystem
   protected mod?: PostgresMod

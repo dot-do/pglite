@@ -1,4 +1,4 @@
-import type { PGliteInterface, Transaction } from './interface.js'
+import type { PGliteInterfaceBase, Transaction } from './interface.js'
 import { serialize as serializeProtocol } from '@electric-sql/pg-protocol'
 import { parseDescribeStatementResults } from './parse.js'
 import { TEXT } from './types.js'
@@ -155,10 +155,10 @@ export const uuid = (): string => {
  * @returns The formatted query
  */
 export async function formatQuery(
-  pg: PGliteInterface,
+  pg: PGliteInterfaceBase,
   query: string,
   params?: any[] | null,
-  tx?: Transaction | PGliteInterface,
+  tx?: Transaction | PGliteInterfaceBase,
 ) {
   if (!params || params.length === 0) {
     // no params so no formatting needed

@@ -3,7 +3,7 @@ import type {
   ExecProtocolResult,
   Extensions,
   MemoryStats,
-  PGliteInterface,
+  PGliteInterfaceBase,
   PGliteInterfaceExtensions,
   PGliteOptions,
   Transaction,
@@ -22,7 +22,7 @@ export type PGliteWorkerOptions<E extends Extensions = Extensions> =
 
 export class PGliteWorker
   extends BasePGlite
-  implements PGliteInterface, AsyncDisposable
+  implements PGliteInterfaceBase, AsyncDisposable
 {
   #initPromise: Promise<void>
   #debug: DebugLevel = 0

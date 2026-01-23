@@ -1,6 +1,7 @@
 import type {
   Extension,
   PGliteInterface,
+  PGliteInterfaceBase,
   Results,
   Transaction,
 } from '../interface'
@@ -26,7 +27,7 @@ export type {
 
 const MAX_RETRIES = 5
 
-const setup = async (pg: PGliteInterface, _emscriptenOpts: any) => {
+const setup = async (pg: PGliteInterfaceBase, _emscriptenOpts: any) => {
   // The notify triggers are only ever added and never removed
   // Keep track of which triggers have been added to avoid adding them multiple times
   const tableNotifyTriggersAdded = new Set<string>()
@@ -716,7 +717,7 @@ export type PGliteWithLive = PGliteInterface & {
  * @returns list of tables used in the view
  */
 async function getTablesForView(
-  tx: Transaction | PGliteInterface,
+  tx: Transaction | PGliteInterfaceBase,
   viewName: string,
 ): Promise<
   {
@@ -794,7 +795,7 @@ async function getTablesForView(
  * @param tables list of tables to add triggers to
  */
 async function addNotifyTriggersToTables(
-  tx: Transaction | PGliteInterface,
+  tx: Transaction | PGliteInterfaceBase,
   tables: {
     table_name: string
     table_oid: number

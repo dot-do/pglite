@@ -134,7 +134,7 @@ export interface ExtensionSetupResult<TNamespace = unknown> {
 }
 
 export type ExtensionSetup<TNamespace = unknown> = (
-  pg: PGliteInterface,
+  pg: PGliteInterfaceBase,
   emscriptenOpts: Record<string, unknown>,
   clientOnly?: boolean,
 ) => Promise<ExtensionSetupResult<TNamespace>>
@@ -377,53 +377,64 @@ export interface ExtensionMemoryStats {
   heapIncrease?: number
 }
 
-export type PGliteInterface<T extends Extensions = Extensions> =
-  InitializedExtensions<T> & {
-    readonly waitReady: Promise<void>
-    readonly debug: DebugLevel
-    readonly ready: boolean
-    readonly closed: boolean
+/**
+ * Base interface for PGlite without extension namespaces.
+ * Classes should implement this interface. The full PGliteInterface
+ * type includes extension namespaces and is used for return types.
+ */
+export interface PGliteInterfaceBase {
+  readonly waitReady: Promise<void>
+  readonly debug: DebugLevel
+  readonly ready: boolean
+  readonly closed: boolean
 
-    close(): Promise<void>
-    query<T>(
-      query: string,
-      params?: unknown[],
-      options?: QueryOptions,
-    ): Promise<Results<T>>
-    sql<T>(
-      sqlStrings: TemplateStringsArray,
-      ...params: unknown[]
-    ): Promise<Results<T>>
-    exec(query: string, options?: QueryOptions): Promise<Array<Results>>
-    describeQuery(query: string): Promise<DescribeQueryResult>
-    transaction<T>(callback: (tx: Transaction) => Promise<T>): Promise<T>
-    execProtocolRaw(
-      message: Uint8Array,
-      options?: ExecProtocolOptions,
-    ): Promise<Uint8Array>
-    execProtocol(
-      message: Uint8Array,
-      options?: ExecProtocolOptions,
-    ): Promise<ExecProtocolResult>
-    runExclusive<T>(fn: () => Promise<T>): Promise<T>
-    listen(
-      channel: string,
-      callback: (payload: string) => void,
-      tx?: Transaction,
-    ): Promise<(tx?: Transaction) => Promise<void>>
-    unlisten(
-      channel: string,
-      callback?: (payload: string) => void,
-      tx?: Transaction,
-    ): Promise<void>
-    onNotification(
-      callback: (channel: string, payload: string) => void,
-    ): () => void
-    offNotification(callback: (channel: string, payload: string) => void): void
-    dumpDataDir(compression?: DumpTarCompressionOptions): Promise<File | Blob>
-    refreshArrayTypes(): Promise<void>
-    getMemoryStats(): Promise<MemoryStats>
-  }
+  close(): Promise<void>
+  query<T>(
+    query: string,
+    params?: unknown[],
+    options?: QueryOptions,
+  ): Promise<Results<T>>
+  sql<T>(
+    sqlStrings: TemplateStringsArray,
+    ...params: unknown[]
+  ): Promise<Results<T>>
+  exec(query: string, options?: QueryOptions): Promise<Array<Results>>
+  describeQuery(query: string): Promise<DescribeQueryResult>
+  transaction<T>(callback: (tx: Transaction) => Promise<T>): Promise<T>
+  execProtocolRaw(
+    message: Uint8Array,
+    options?: ExecProtocolOptions,
+  ): Promise<Uint8Array>
+  execProtocol(
+    message: Uint8Array,
+    options?: ExecProtocolOptions,
+  ): Promise<ExecProtocolResult>
+  runExclusive<T>(fn: () => Promise<T>): Promise<T>
+  listen(
+    channel: string,
+    callback: (payload: string) => void,
+    tx?: Transaction,
+  ): Promise<(tx?: Transaction) => Promise<void>>
+  unlisten(
+    channel: string,
+    callback?: (payload: string) => void,
+    tx?: Transaction,
+  ): Promise<void>
+  onNotification(
+    callback: (channel: string, payload: string) => void,
+  ): () => void
+  offNotification(callback: (channel: string, payload: string) => void): void
+  dumpDataDir(compression?: DumpTarCompressionOptions): Promise<File | Blob>
+  refreshArrayTypes(): Promise<void>
+  getMemoryStats(): Promise<MemoryStats>
+}
+
+/**
+ * Full PGlite interface including extension namespaces.
+ * Use this for return types. Classes should implement PGliteInterfaceBase.
+ */
+export type PGliteInterface<T extends Extensions = Record<string, never>> =
+  PGliteInterfaceBase & InitializedExtensions<T>
 
 export type PGliteInterfaceExtensions<E> = E extends Extensions
   ? {

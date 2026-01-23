@@ -10,7 +10,7 @@ import {
 } from './types.js'
 import type {
   DebugLevel,
-  PGliteInterface,
+  PGliteInterfaceBase,
   Results,
   Transaction,
   QueryOptions,
@@ -29,7 +29,7 @@ import {
 import { makePGliteError } from './errors.js'
 
 export abstract class BasePGlite
-  implements Pick<PGliteInterface, 'query' | 'sql' | 'exec' | 'transaction'>
+  implements Pick<PGliteInterfaceBase, 'query' | 'sql' | 'exec' | 'transaction'>
 {
   serializers: Record<number | string, Serializer> = { ...serializers }
   parsers: Record<number | string, Parser> = { ...parsers }

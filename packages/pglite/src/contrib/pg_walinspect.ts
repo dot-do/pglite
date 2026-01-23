@@ -1,10 +1,10 @@
 import type {
   Extension,
   ExtensionSetupResult,
-  PGliteInterface,
+  PGliteInterfaceBase,
 } from '../interface'
 
-const setup = async (_pg: PGliteInterface, _emscriptenOpts: any) => {
+const setup = async (_pg: PGliteInterfaceBase, _emscriptenOpts: any) => {
   return {
     bundlePath: new URL('../../release/pg_walinspect.tar.gz', import.meta.url),
   } satisfies ExtensionSetupResult
