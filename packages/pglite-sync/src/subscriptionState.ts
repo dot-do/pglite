@@ -1,4 +1,4 @@
-import type { PGliteInterface, Transaction } from '@dotdo/pglite'
+import type { PGliteInterface, PGliteInterfaceBase, Transaction } from '@dotdo/pglite'
 import type { Offset } from '@electric-sql/client'
 import { SubscriptionKey, Lsn } from './types'
 
@@ -16,7 +16,7 @@ export interface ShapeSubscriptionState {
 }
 
 export interface GetSubscriptionStateOptions {
-  readonly pg: PGliteInterface | Transaction
+  readonly pg: PGliteInterfaceBase | Transaction
   readonly metadataSchema: string
   readonly subscriptionKey: SubscriptionKey
 }
@@ -59,7 +59,7 @@ export async function getSubscriptionState({
 }
 
 export interface UpdateSubscriptionStateOptions {
-  pg: PGliteInterface | Transaction
+  pg: PGliteInterfaceBase | Transaction
   metadataSchema: string
   subscriptionKey: SubscriptionKey
   shapeMetadata: Record<string, ShapeSubscriptionState>
@@ -103,7 +103,7 @@ export async function updateSubscriptionState({
 }
 
 export interface DeleteSubscriptionStateOptions {
-  pg: PGliteInterface | Transaction
+  pg: PGliteInterfaceBase | Transaction
   metadataSchema: string
   subscriptionKey: SubscriptionKey
 }
@@ -124,7 +124,7 @@ export async function deleteSubscriptionState({
 }
 
 export interface MigrateSubscriptionMetadataTablesOptions {
-  pg: PGliteInterface | Transaction
+  pg: PGliteInterfaceBase | Transaction
   metadataSchema: string
 }
 

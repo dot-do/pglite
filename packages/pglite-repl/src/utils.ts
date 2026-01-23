@@ -4,7 +4,7 @@ import type { Results, Response } from './types'
 
 export async function runQuery(
   query: string,
-  pg: PGliteInterface,
+  pg: PGliteInterfaceBase,
 ): Promise<Response> {
   if (query.trim().toLowerCase().startsWith('\\')) {
     return runDescribe(query, pg)
@@ -31,7 +31,7 @@ export async function runQuery(
 
 export async function runDescribe(
   query: string,
-  pg: PGliteInterface,
+  pg: PGliteInterfaceBase,
 ): Promise<Response> {
   const start = performance.now()
   let out: string | Record<string, unknown> | undefined
@@ -85,7 +85,7 @@ export async function runDescribe(
 }
 
 export async function getSchema(
-  pg: PGliteInterface,
+  pg: PGliteInterfaceBase,
 ): Promise<Record<string, string[]>> {
   const ret = await pg.query<{
     schema: string

@@ -1,9 +1,9 @@
 import { ChangeMessage } from '@electric-sql/client'
-import type { PGliteInterface, Transaction } from '@dotdo/pglite'
+import type { PGliteInterface, PGliteInterfaceBase, Transaction } from '@dotdo/pglite'
 import type { MapColumns, InsertChangeMessage } from './types'
 
 export interface ApplyMessageToTableOptions {
-  pg: PGliteInterface | Transaction
+  pg: PGliteInterfaceBase | Transaction
   table: string
   schema?: string
   message: ChangeMessage<any>
@@ -81,7 +81,7 @@ export async function applyMessageToTable({
 }
 
 export interface BulkApplyMessagesToTableOptions {
-  pg: PGliteInterface | Transaction
+  pg: PGliteInterfaceBase | Transaction
   table: string
   schema?: string
   messages: InsertChangeMessage[]

@@ -6,7 +6,7 @@ import {
   ShapeStreamOptions,
 } from '@electric-sql/client'
 import { MultiShapeStream } from '@electric-sql/experimental'
-import type { Extension, PGliteInterface } from '@dotdo/pglite'
+import type { Extension, PGliteInterface, PGliteInterfaceBase } from '@dotdo/pglite'
 import {
   migrateSubscriptionMetadataTables,
   getSubscriptionState,
@@ -33,7 +33,7 @@ import {
 export * from './types'
 
 async function createPlugin(
-  pg: PGliteInterface,
+  pg: PGliteInterfaceBase,
   options?: ElectricSyncOptions,
 ) {
   const debug = options?.debug ?? false
@@ -515,7 +515,7 @@ export type PGliteWithSync = PGliteInterface & {
 export function electricSync(options?: ElectricSyncOptions) {
   return {
     name: 'ElectricSQL Sync',
-    setup: async (pg: PGliteInterface) => {
+    setup: async (pg: PGliteInterfaceBase) => {
       const { namespaceObj, close } = await createPlugin(pg, options)
       return {
         namespaceObj,
