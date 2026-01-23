@@ -12,8 +12,8 @@ import {
   isRef,
   unref,
 } from 'vue-demi'
-import { Results } from '@electric-sql/pglite'
-import { query as buildQuery } from '@electric-sql/pglite/template'
+import { Results } from '@dotdo/pglite'
+import { query as buildQuery } from '@dotdo/pglite/template'
 import { injectPGlite } from './dependency-injection'
 
 type UnsubscribeFn = () => Promise<void>

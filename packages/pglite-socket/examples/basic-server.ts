@@ -1,5 +1,5 @@
 import { PGLiteSocketServer } from '../src'
-import { PGlite, DebugLevel } from '@electric-sql/pglite'
+import { PGlite, DebugLevel } from '@dotdo/pglite'
 
 /*
  * This is a basic example of how to use the PGLiteSocketServer class.

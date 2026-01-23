@@ -9,7 +9,7 @@
  * Usage:
  *
  * ```typescript
- * import { patchModule } from '@electric-sql/pglite/precompiled-wrappers';
+ * import { patchModule } from '@dotdo/pglite/precompiled-wrappers';
  *
  * // Before any addFunction calls:
  * const mod = await PostgresModFactory(emscriptenOpts);
@@ -22,7 +22,7 @@
  * Or use the functions directly:
  *
  * ```typescript
- * import { precompiledAddFunctionSync } from '@electric-sql/pglite/precompiled-wrappers';
+ * import { precompiledAddFunctionSync } from '@dotdo/pglite/precompiled-wrappers';
  *
  * const funcPtr = precompiledAddFunctionSync(mod, myCallback, 'iii');
  * ```

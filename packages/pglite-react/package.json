@@ -1,5 +1,5 @@
 {
-  "name": "@electric-sql/pglite-react",
+  "name": "@dotdo/pglite-react",
   "version": "0.2.33",
   "description": "Hooks for using PGlite",
   "type": "module",

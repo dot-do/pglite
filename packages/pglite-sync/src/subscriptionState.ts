@@ -1,4 +1,4 @@
-import type { PGliteInterface, Transaction } from '@electric-sql/pglite'
+import type { PGliteInterface, Transaction } from '@dotdo/pglite'
 import type { Offset } from '@electric-sql/client'
 import { SubscriptionKey, Lsn } from './types'
 

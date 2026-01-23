@@ -2,8 +2,8 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { cleanup, render, waitFor } from '@testing-library/vue'
 import { computed, defineComponent, isVue3, ref, shallowRef } from 'vue-demi'
 import { isProxy } from 'vue'
-import { PGlite } from '@electric-sql/pglite'
-import { live } from '@electric-sql/pglite/live'
+import { PGlite } from '@dotdo/pglite'
+import { live } from '@dotdo/pglite/live'
 import { makePGliteDependencyInjector } from '../src'
 
 if (isVue3) {

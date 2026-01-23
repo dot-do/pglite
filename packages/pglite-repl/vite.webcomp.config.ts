@@ -15,7 +15,7 @@ export default defineConfig({
     }),
   ],
   optimizeDeps: {
-    exclude: ['@electric-sql/pglite'],
+    exclude: ['@dotdo/pglite'],
   },
   define: { 'process.env': {} },
   build: {

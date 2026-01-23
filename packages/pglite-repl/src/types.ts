@@ -1,4 +1,4 @@
-import { type Results as BaseResults } from '@electric-sql/pglite'
+import { type Results as BaseResults } from '@dotdo/pglite'
 
 export type Results = BaseResults<{ [key: string]: unknown }[]>
 

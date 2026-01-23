@@ -1,4 +1,4 @@
-import { PGlite } from '@electric-sql/pglite'
+import { PGlite } from '@dotdo/pglite'
 import './App.css'
 import { Repl } from './Repl'
 

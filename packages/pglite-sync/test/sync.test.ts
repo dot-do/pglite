@@ -1,6 +1,6 @@
 import { ShapeStreamOptions } from '@electric-sql/client'
 import { MultiShapeMessages } from '@electric-sql/experimental'
-import { PGlite, PGliteInterfaceExtensions } from '@electric-sql/pglite'
+import { PGlite, PGliteInterfaceExtensions } from '@dotdo/pglite'
 import { Mock, beforeEach, describe, expect, it, vi } from 'vitest'
 import { electricSync } from '../src/index.js'
 import { MultiShapeStream } from '@electric-sql/experimental'

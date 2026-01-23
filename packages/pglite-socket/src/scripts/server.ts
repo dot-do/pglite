@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { PGlite, DebugLevel } from '@electric-sql/pglite'
-import type { Extension, Extensions } from '@electric-sql/pglite'
+import { PGlite, DebugLevel } from '@dotdo/pglite'
+import type { Extension, Extensions } from '@dotdo/pglite'
 import { PGLiteSocketServer } from '../index'
 import { parseArgs } from 'node:util'
 import { spawn, ChildProcess } from 'node:child_process'
@@ -180,21 +180,21 @@ class PGLiteServerRunner {
             )
           }
         } else if (builtInExtensions.includes(name)) {
-          // Built-in extension (e.g., @electric-sql/pglite/vector)
-          const mod = await import(`@electric-sql/pglite/${name}`)
+          // Built-in extension (e.g., @dotdo/pglite/vector)
+          const mod = await import(`@dotdo/pglite/${name}`)
           ext = mod[name] as Extension
           if (ext) {
             extensions[name] = ext
             console.log(`Imported extension: ${name}`)
           }
         } else {
-          // Try contrib first (e.g., @electric-sql/pglite/contrib/pgcrypto)
+          // Try contrib first (e.g., @dotdo/pglite/contrib/pgcrypto)
           try {
-            const mod = await import(`@electric-sql/pglite/contrib/${name}`)
+            const mod = await import(`@dotdo/pglite/contrib/${name}`)
             ext = mod[name] as Extension
           } catch {
-            // Fall back to external package (e.g., @electric-sql/pglite-<extension>)
-            const mod = await import(`@electric-sql/pglite-${name}`)
+            // Fall back to external package (e.g., @dotdo/pglite-<extension>)
+            const mod = await import(`@dotdo/pglite-${name}`)
             ext = mod[name] as Extension
           }
           if (ext) {

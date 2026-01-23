@@ -1,5 +1,5 @@
 import React, { createContext, useContext } from 'react'
-import { PGliteWithLive } from '@electric-sql/pglite/live'
+import { PGliteWithLive } from '@dotdo/pglite/live'
 
 interface Props<T extends PGliteWithLive> {
   children?: React.ReactNode

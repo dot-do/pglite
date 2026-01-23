@@ -1,5 +1,5 @@
 {
-  "name": "@electric-sql/pglite-vue",
+  "name": "@dotdo/pglite-vue",
   "version": "0.2.33",
   "description": "Vue hooks for using PGlite",
   "type": "module",

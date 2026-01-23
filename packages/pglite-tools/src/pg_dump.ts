@@ -1,4 +1,4 @@
-import { PGlite } from '@electric-sql/pglite'
+import { PGlite } from '@dotdo/pglite'
 import PgDumpModFactory, { PgDumpMod } from './pgDumpModFactory'
 
 const dumpFilePath = '/tmp/out.sql'

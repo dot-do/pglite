@@ -8,7 +8,7 @@ import {
   beforeAll,
   afterAll,
 } from 'vitest'
-import { PGlite } from '@electric-sql/pglite'
+import { PGlite } from '@dotdo/pglite'
 import {
   PGLiteSocketHandler,
   PGLiteSocketServer,

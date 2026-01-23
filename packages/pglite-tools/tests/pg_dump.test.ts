@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { PGlite } from '@electric-sql/pglite'
+import { PGlite } from '@dotdo/pglite'
 import { pgDump } from '../dist/pg_dump.js'
 import * as fs from 'fs/promises'
 

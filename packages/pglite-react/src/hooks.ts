@@ -1,5 +1,5 @@
-import type { LiveQuery, LiveQueryResults } from '@electric-sql/pglite/live'
-import { query as buildQuery } from '@electric-sql/pglite/template'
+import type { LiveQuery, LiveQueryResults } from '@dotdo/pglite/live'
+import { query as buildQuery } from '@dotdo/pglite/template'
 import { useEffect, useRef, useState } from 'react'
 import { usePGlite } from './provider'
 

@@ -10,7 +10,7 @@ import {
   vi,
 } from 'vitest'
 import { Client } from 'pg'
-import { PGlite, PGliteInterfaceExtensions } from '@electric-sql/pglite'
+import { PGlite, PGliteInterfaceExtensions } from '@dotdo/pglite'
 import { electricSync, InitialInsertMethod } from '../src/index.js'
 
 const DATABASE_URL =

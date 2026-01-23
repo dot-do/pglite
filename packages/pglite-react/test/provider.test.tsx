@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { renderHook } from '@testing-library/react'
 import { waitFor } from '@testing-library/dom'
 import React from 'react'
-import { PGlite } from '@electric-sql/pglite'
-import { live, PGliteWithLive } from '@electric-sql/pglite/live'
+import { PGlite } from '@dotdo/pglite'
+import { live, PGliteWithLive } from '@dotdo/pglite/live'
 import { makePGliteProvider, PGliteProvider, usePGlite } from '../src'
 
 describe('provider', () => {

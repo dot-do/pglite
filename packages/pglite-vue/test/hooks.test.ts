@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach, beforeAll } from 'vitest'
 import { ref } from 'vue-demi'
-import { PGlite } from '@electric-sql/pglite'
-import { live, PGliteWithLive } from '@electric-sql/pglite/live'
+import { PGlite } from '@dotdo/pglite'
+import { live, PGliteWithLive } from '@dotdo/pglite/live'
 import { type useLiveIncrementalQuery, type useLiveQuery } from '../src'
 
 function flushPromises(timeoutMs = 0): Promise<void> {

@@ -7,7 +7,7 @@ import {
   defaultDarkTheme,
 } from '../src/Repl'
 import type { ReplProps, ReplTheme } from '../src/Repl'
-import type { PGlite } from '@electric-sql/pglite'
+import type { PGlite } from '@dotdo/pglite'
 import type { Extension } from '@uiw/react-codemirror'
 
 // @ts-ignore uses CSS loader

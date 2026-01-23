@@ -1,4 +1,4 @@
-import type { PGlite } from '@electric-sql/pglite'
+import type { PGlite } from '@dotdo/pglite'
 import { createServer, Server, Socket } from 'net'
 
 // Connection queue timeout in milliseconds

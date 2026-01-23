@@ -1,5 +1,5 @@
 {
-  "name": "@electric-sql/pglite-sync",
+  "name": "@dotdo/pglite-sync",
   "version": "0.4.1",
   "description": "ElectricSQL Sync for PGlite",
   "type": "module",
