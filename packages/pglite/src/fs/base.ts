@@ -105,7 +105,8 @@ export abstract class BaseFilesystem implements Filesystem {
         (mod: PostgresMod) => {
           const EMFS = createEmscriptenFS(mod, this)
           mod.FS.mkdir(PGDATA)
-          mod.FS.mount(EMFS, {}, PGDATA)
+          // Type assertion needed: @types/emscripten has incorrect syncfs signature
+          mod.FS.mount(EMFS as unknown as Emscripten.FileSystemType, {}, PGDATA)
         },
       ],
     }
