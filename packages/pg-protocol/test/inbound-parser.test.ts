@@ -167,11 +167,19 @@ const expectedTwoParameterMessage: ParameterDescriptionMessage = {
 }
 
 function testForMessage<T extends BackendMessage>(
-  buffer: ArrayBuffer,
+  buffer: ArrayBuffer | Uint8Array,
   expectedMessage: T,
 ) {
   it('recieves and parses ' + expectedMessage.name, async () => {
-    const messages = await parseBuffers([buffer])
+    // Convert Uint8Array to ArrayBuffer safely (handles views/subarrays)
+    const buf =
+      buffer instanceof Uint8Array
+        ? buffer.buffer.slice(
+            buffer.byteOffset,
+            buffer.byteOffset + buffer.byteLength,
+          )
+        : buffer
+    const messages = await parseBuffers([buf])
     const [lastMessage] = messages
 
     for (const key in expectedMessage) {
