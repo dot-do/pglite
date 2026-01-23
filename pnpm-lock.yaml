@@ -44,7 +44,7 @@ importers:
       '@dotdo/pglite':
         specifier: workspace:*
         version: link:../packages/pglite
-      '@electric-sql/pglite-repl':
+      '@dotdo/pglite-repl':
         specifier: workspace:*
         version: link:../packages/pglite-repl
       '@uiw/codemirror-theme-github':
@@ -63,7 +63,7 @@ importers:
       '@dotdo/pglite':
         specifier: workspace:*
         version: link:../../packages/pglite
-      '@electric-sql/pglite-react':
+      '@dotdo/pglite-react':
         specifier: workspace:*
         version: link:../../packages/pglite-react
       react:
@@ -264,7 +264,7 @@ importers:
       '@codemirror/view':
         specifier: ^6.34.1
         version: 6.38.2
-      '@electric-sql/pglite-react':
+      '@dotdo/pglite-react':
         specifier: workspace:*
         version: link:../pglite-react
       '@uiw/codemirror-theme-github':
@@ -2096,6 +2096,7 @@ packages:
 
   bun@1.1.30:
     resolution: {integrity: sha512-ysRL1pq10Xba0jqVLPrKU3YIv0ohfp3cTajCPtpjCyppbn3lfiAVNpGoHfyaxS17OlPmWmR67UZRPw/EueQuug==}
+    cpu: [arm64, x64]
     os: [darwin, linux, win32]
     hasBin: true
 
@@ -3400,6 +3401,7 @@ packages:
 
   oniguruma-to-js@0.4.3:
     resolution: {integrity: sha512-X0jWUcAlxORhOqqBREgPMgnshB7ZGYszBNspP+tS9hPD3l13CdaXcHbgImoHUHlrvGx/7AvFEkTRhAGYh+jzjQ==}
+    deprecated: use oniguruma-to-es instead
 
   opener@1.5.2:
     resolution: {integrity: sha512-ur5UIdyw5Y7yEj9wLzhqXiy6GZ3Mwx0yGI+5sMn2r0N0v3cKJvUmFH5yPP+WXh9e0xfyzyJX95D8l088DNFj7A==}
@@ -4492,10 +4494,12 @@ packages:
   whatwg-encoding@2.0.0:
     resolution: {integrity: sha512-p41ogyeMUrw3jWclHWTQg1k05DSVXPLcVxRTYsXUk+ZooOCZLcoYgPZ/HL/D/N+uQPOtcp1me1WhBEaX02mhWg==}
     engines: {node: '>=12'}
+    deprecated: Use @exodus/bytes instead for a more spec-conformant and faster implementation
 
   whatwg-encoding@3.1.1:
     resolution: {integrity: sha512-6qN4hJdMwfYBtE3YBTTHhoeuUrDBPZmbQaxWAqSALV/MeEnR5z1xd8UKud2RAkFoPkmB+hli1TZSnyi84xz1vQ==}
     engines: {node: '>=18'}
+    deprecated: Use @exodus/bytes instead for a more spec-conformant and faster implementation
 
   whatwg-mimetype@4.0.0:
     resolution: {integrity: sha512-QaKxh0eNIi2mE9p2vEdzfagOKHCcj1pJ56EEHGQOVxp8r9/iszLUUV7v89x9O1p/T+NlTM5W7jW6+cz4Fq1YVg==}

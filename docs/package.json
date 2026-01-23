@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@dotdo/pglite": "workspace:*",
-    "@electric-sql/pglite-repl": "workspace:*",
+    "@dotdo/pglite-repl": "workspace:*",
     "@uiw/codemirror-theme-github": "^4.23.0",
     "dedent": "^1.5.3"
   }
