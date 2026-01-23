@@ -61,16 +61,16 @@
     "react-dom": "^19.0.0"
   },
   "peerDependencies": {
-    "@electric-sql/pglite": "workspace:0.3.15"
+    "@dotdo/pglite": "workspace:0.3.15"
   },
   "peerDependenciesMeta": {
-    "@electric-sql/pglite": {
+    "@dotdo/pglite": {
       "optional": true
     }
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.1",
-    "@electric-sql/pglite": "workspace:*",
+    "@dotdo/pglite": "workspace:*",
     "@types/node": "^20.16.11",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
