@@ -25,6 +25,6 @@
     "wa-sqlite": "github:rhashimoto/wa-sqlite#v0.9.14"
   },
   "peerDependencies": {
-    "@electric-sql/pglite": "workspace:*"
+    "@dotdo/pglite": "workspace:*"
   }
 }
