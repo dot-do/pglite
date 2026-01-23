@@ -8,7 +8,7 @@ import type { CreateThemeOptions } from '@uiw/codemirror-themes'
 import { defaultKeymap } from '@codemirror/commands'
 import { keymap } from '@codemirror/view'
 import { PostgreSQL } from '@codemirror/lang-sql'
-import type { PGliteInterface } from '@dotdo/pglite'
+import type { PGliteInterfaceBase } from '@dotdo/pglite'
 import type { PGliteWithLive } from '@dotdo/pglite/live'
 import { usePGlite } from '@dotdo/pglite-react'
 import { makeSqlExt } from './sqlSupport'
@@ -40,7 +40,7 @@ export const defaultDarkThemeInit: ThemeInit = githubDarkInit
 export const defaultDarkTheme = githubDark
 
 export interface ReplProps {
-  pg?: PGliteInterface
+  pg?: PGliteInterfaceBase
   border?: boolean
   lightTheme?: Extension
   darkTheme?: Extension
@@ -71,7 +71,7 @@ export function Repl({
   )
   const [styles, setStyles] = useState<{ [key: string]: string | number }>({})
 
-  const pg: PGliteInterface = usePGlite(pgProp as PGliteWithLive)
+  const pg: PGliteInterfaceBase = usePGlite(pgProp as PGliteWithLive)
 
   useEffect(() => {
     let ignore = false

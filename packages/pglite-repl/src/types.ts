@@ -1,6 +1,7 @@
 import { type Results as BaseResults } from '@dotdo/pglite'
 
-export type Results = BaseResults<{ [key: string]: unknown }[]>
+// When using rowMode: 'array', each row is an array of values
+export type Results = BaseResults<unknown[]>
 
 export interface Response {
   query: string

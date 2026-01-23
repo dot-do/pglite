@@ -1,4 +1,4 @@
-import { type PGliteInterface } from '@dotdo/pglite'
+import { type PGliteInterfaceBase } from '@dotdo/pglite'
 import { describe } from 'psql-describe'
 import type { Results, Response } from './types'
 
@@ -17,7 +17,7 @@ export async function runQuery(
     const elapsed = performance.now() - start
     return {
       query,
-      results: result as Results[],
+      results: result as unknown as Results[],
       time: elapsed,
     }
   } catch (err) {
@@ -40,7 +40,7 @@ export async function runDescribe(
     query,
     'postgres',
     async (sql) => {
-      ret = (await pg.exec(sql, { rowMode: 'array' }))[0] as Results
+      ret = (await pg.exec(sql, { rowMode: 'array' }))[0] as unknown as Results
       return {
         rows: ret.rows,
         fields: ret.fields,
