@@ -5,7 +5,7 @@ import {
   CommandCompleteMessage,
   ParameterDescriptionMessage,
 } from '@electric-sql/pg-protocol/messages'
-import type { Results, QueryOptions } from './interface.js'
+import type { Results, QueryOptions, Row } from './interface.js'
 import { parseType, type Parser } from './types.js'
 
 /**
