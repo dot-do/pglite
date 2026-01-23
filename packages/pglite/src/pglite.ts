@@ -72,7 +72,7 @@ export class PGlite
   #extensions: Extensions
   #extensionsClose: Array<() => Promise<void>> = []
   #lazyExtensions: boolean = false
-  #autoLoadExtensions: boolean = false
+  // Note: autoLoadExtensions is accepted in options but not yet implemented (no-op)
   #extensionFlags: Record<string, boolean> = {}
   #loadedExtensions: Set<string> = new Set()
   /**
@@ -188,10 +188,8 @@ export class PGlite
       this.#lazyExtensions = options.lazyExtensions
     }
 
-    // Enable auto-loading of extensions when SQL syntax is detected
-    if (options?.autoLoadExtensions !== undefined) {
-      this.#autoLoadExtensions = options.autoLoadExtensions
-    }
+    // Note: autoLoadExtensions option is accepted but not yet implemented
+    // It's documented in interface.ts as having no effect currently
 
     // Save extension feature flags
     if (options?.extensionFlags !== undefined) {
