@@ -4,17 +4,19 @@ import PgDumpModFactory, { PgDumpMod } from './pgDumpModFactory'
 const dumpFilePath = '/tmp/out.sql'
 
 /**
- * Creates a new Uint8Array based on two different ArrayBuffers
+ * Creates a new Uint8Array based on two different ArrayBuffers or Uint8Arrays
  *
  * @private
- * @param {ArrayBuffers} buffer1 The first buffer.
- * @param {ArrayBuffers} buffer2 The second buffer.
- * @return {ArrayBuffers} The new ArrayBuffer created out of the two.
+ * @param {ArrayBuffer | Uint8Array} buffer1 The first buffer.
+ * @param {ArrayBuffer | Uint8Array} buffer2 The second buffer.
+ * @return {Uint8Array} The new Uint8Array created out of the two.
  */
-function concat(buffer1: ArrayBuffer, buffer2: ArrayBuffer) {
-  const tmp = new Uint8Array(buffer1.byteLength + buffer2.byteLength)
-  tmp.set(new Uint8Array(buffer1), 0)
-  tmp.set(new Uint8Array(buffer2), buffer1.byteLength)
+function concat(buffer1: ArrayBuffer | Uint8Array, buffer2: ArrayBuffer | Uint8Array) {
+  const arr1 = buffer1 instanceof Uint8Array ? buffer1 : new Uint8Array(buffer1)
+  const arr2 = buffer2 instanceof Uint8Array ? buffer2 : new Uint8Array(buffer2)
+  const tmp = new Uint8Array(arr1.byteLength + arr2.byteLength)
+  tmp.set(arr1, 0)
+  tmp.set(arr2, arr1.byteLength)
   return tmp
 }
 
