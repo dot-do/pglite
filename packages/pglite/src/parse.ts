@@ -37,10 +37,12 @@ export function parseResults(
         if (!currentResultSet) break
         const msg = message as DataRowMessage
         if (options?.rowMode === 'array') {
+          // In array mode, rows contain arrays instead of objects
+          // Type assertion needed because Row type defaults to object
           currentResultSet.rows.push(
             msg.fields.map((field, i) =>
               parseType(field, currentResultSet!.fields[i].dataTypeID, parsers),
-            ),
+            ) as unknown as Row,
           )
         } else {
           // rowMode === "object"

@@ -100,7 +100,7 @@ function loadExtension(
         mod.FS.createPreloadedFile(
           dirname(filePath),
           file.name.split('/').pop()!.slice(0, -3),
-          file.data as Uint8Array, // Emscripten accepts Uint8Array but the type definition is broader
+          file.data as unknown as string, // Emscripten accepts Uint8Array despite string type definition
           true,
           true,
           extOk,

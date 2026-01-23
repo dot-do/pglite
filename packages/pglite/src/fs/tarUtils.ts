@@ -36,7 +36,7 @@ export async function loadTar(
   file: File | Blob,
   pgDataDir: string,
 ): Promise<void> {
-  let tarball: Uint8Array<ArrayBuffer> = new Uint8Array(await file.arrayBuffer())
+  let tarball: Uint8Array = new Uint8Array(await file.arrayBuffer())
   const filename =
     typeof File !== 'undefined' && file instanceof File ? file.name : undefined
   const compressed =
@@ -44,7 +44,7 @@ export async function loadTar(
     filename?.endsWith('.tgz') ||
     filename?.endsWith('.tar.gz')
   if (compressed) {
-    tarball = await unzip(tarball) as Uint8Array<ArrayBuffer>
+    tarball = await unzip(tarball) as Uint8Array
   }
 
   let files
@@ -53,7 +53,7 @@ export async function loadTar(
   } catch (e) {
     if (e instanceof Error && e.message.includes('File is corrupted')) {
       // The file may be compressed, but had the wrong mime type, try unzipping it
-      tarball = await unzip(tarball) as Uint8Array<ArrayBuffer>
+      tarball = await unzip(tarball) as Uint8Array
       files = untar(tarball)
     } else {
       throw e
