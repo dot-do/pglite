@@ -53,6 +53,17 @@ const copyFiles = async (srcDir: string, destDir: string) => {
 async function main() {
   await copyFiles('./release', './dist')
   await findAndReplaceInDir('./dist', /\.\.\/release\//g, './', ['.js', '.cjs'])
+
+  // Fix for Cloudflare Workers: self.location is undefined in CF Workers
+  // The Emscripten-generated code tries to access self.location.href which fails
+  // Replace with optional chaining to handle this gracefully
+  await findAndReplaceInDir(
+    './dist',
+    /scriptDirectory=self\.location\.href/g,
+    'scriptDirectory=self.location?.href||""',
+    ['.js', '.cjs'],
+  )
+
   await findAndReplaceInDir('./dist/contrib', /\.\.\/release\//g, '', [
     '.js',
     '.cjs',
