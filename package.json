@@ -1,4 +1,5 @@
 {
+  "name": "@dotdo/pglite-monorepo",
   "pnpm": {},
   "engines": {
     "node": ">=20",
