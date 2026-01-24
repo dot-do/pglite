@@ -14,6 +14,28 @@ export type FS = typeof FS & {
   quit: () => void
 }
 
+/**
+ * Callback interface for Cloudflare Workers compatibility.
+ * These callbacks are called by EM_JS trampolines in the C code,
+ * avoiding runtime WASM generation that Cloudflare blocks.
+ */
+export interface PGliteCallbacks {
+  /**
+   * Called when PostgreSQL writes data to the client.
+   * @param ptr Pointer to data in WASM memory
+   * @param length Number of bytes to write
+   * @returns Number of bytes written
+   */
+  write: (ptr: number, length: number) => number
+  /**
+   * Called when PostgreSQL reads data from the client.
+   * @param ptr Pointer to buffer in WASM memory
+   * @param maxLength Maximum number of bytes to read
+   * @returns Number of bytes read
+   */
+  read: (ptr: number, maxLength: number) => number
+}
+
 export interface PostgresMod
   extends Omit<EmscriptenModule, 'preInit' | 'preRun' | 'postRun'> {
   preInit: Array<{ (mod: PostgresMod): void }>
@@ -24,6 +46,12 @@ export interface PostgresMod
   WASM_PREFIX: string
   INITIAL_MEMORY: number
   pg_extensions: Record<string, Promise<Blob | null>>
+  /**
+   * Callbacks for read/write operations.
+   * Used by EM_JS trampolines for Cloudflare Workers compatibility.
+   * Must be set BEFORE calling _pgl_initdb.
+   */
+  _pgliteCallbacks?: PGliteCallbacks
   _pgl_initdb: () => number
   _pgl_backend: () => void
   _pgl_shutdown: () => void

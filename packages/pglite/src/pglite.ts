@@ -105,15 +105,10 @@ export class PGlite
   #notifyListeners = new Map<string, Set<(payload: string) => void>>()
   #globalNotifyListeners = new Set<(channel: string, payload: string) => void>()
 
-  // receive data from wasm
-  #pglite_write: number = -1
-
   #currentResults: BackendMessage[] = []
   #currentThrowOnError: boolean = false
   #currentOnNotice: ((notice: NoticeMessage) => void) | undefined
 
-  // send data to wasm
-  #pglite_read: number = -1
   // buffer that holds the data to be sent to wasm
   #outputData: any = []
   // read index in the buffer
@@ -474,65 +469,67 @@ export class PGlite
     // Load the database engine
     this.mod = await PostgresModFactory(emscriptenOpts)
 
-    // set the write callback
-    this.#pglite_write = this.mod.addFunction((ptr: any, length: number) => {
-      let bytes
-      try {
-        bytes = this.mod!.HEAPU8.subarray(ptr, ptr + length)
-      } catch (e: any) {
-        console.error('error', e)
-        throw e
-      }
-      this.#protocolParser.parse(bytes, (msg) => {
-        this.#parse(msg)
-      })
-      if (this.#keepRawResponse) {
-        const copied = bytes.slice()
-
-        let requiredSize = this.#writeOffset + copied.length
-
-        if (requiredSize > this.#inputData.length) {
-          const newSize =
-            this.#inputData.length +
-            (this.#inputData.length >> 1) +
-            requiredSize
-          if (requiredSize > PGlite.MAX_BUFFER_SIZE) {
-            requiredSize = PGlite.MAX_BUFFER_SIZE
-          }
-          const newBuffer = new Uint8Array(newSize)
-          newBuffer.set(this.#inputData.subarray(0, this.#writeOffset))
-          this.#inputData = newBuffer
+    // Set up _pgliteCallbacks for Cloudflare Workers compatibility.
+    // These callbacks are called by EM_JS trampolines in the C code,
+    // avoiding runtime WASM generation (addFunction) that Cloudflare blocks.
+    // MUST be set BEFORE _pgl_initdb is called.
+    this.mod._pgliteCallbacks = {
+      write: (ptr: number, length: number): number => {
+        let bytes
+        try {
+          bytes = this.mod!.HEAPU8.subarray(ptr, ptr + length)
+        } catch (e: any) {
+          console.error('error', e)
+          throw e
         }
+        this.#protocolParser.parse(bytes, (msg) => {
+          this.#parse(msg)
+        })
+        if (this.#keepRawResponse) {
+          const copied = bytes.slice()
 
-        this.#inputData.set(copied, this.#writeOffset)
-        this.#writeOffset += copied.length
-      }
-      return length
-    }, 'iii')
+          let requiredSize = this.#writeOffset + copied.length
 
-    // set the read callback
-    this.#pglite_read = this.mod.addFunction((ptr: any, max_length: number) => {
-      // copy current data to wasm buffer
-      let length = this.#outputData.length - this.#readOffset
-      if (length > max_length) {
-        length = max_length
-      }
-      try {
-        this.mod!.HEAP8.set(
-          (this.#outputData as Uint8Array).subarray(
-            this.#readOffset,
-            this.#readOffset + length,
-          ),
-          ptr,
-        )
-        this.#readOffset += length
-      } catch (e) {
-        console.log(e)
-      }
-      return length
-    }, 'iii')
+          if (requiredSize > this.#inputData.length) {
+            const newSize =
+              this.#inputData.length +
+              (this.#inputData.length >> 1) +
+              requiredSize
+            if (requiredSize > PGlite.MAX_BUFFER_SIZE) {
+              requiredSize = PGlite.MAX_BUFFER_SIZE
+            }
+            const newBuffer = new Uint8Array(newSize)
+            newBuffer.set(this.#inputData.subarray(0, this.#writeOffset))
+            this.#inputData = newBuffer
+          }
 
-    this.mod._set_read_write_cbs(this.#pglite_read, this.#pglite_write)
+          this.#inputData.set(copied, this.#writeOffset)
+          this.#writeOffset += copied.length
+        }
+        return length
+      },
+      read: (ptr: number, maxLength: number): number => {
+        // copy current data to wasm buffer
+        let length = this.#outputData.length - this.#readOffset
+        if (length > maxLength) {
+          length = maxLength
+        }
+        try {
+          this.mod!.HEAP8.set(
+            (this.#outputData as Uint8Array).subarray(
+              this.#readOffset,
+              this.#readOffset + length,
+            ),
+            ptr,
+          )
+          this.#readOffset += length
+        } catch (e) {
+          console.log(e)
+        }
+        return length
+      },
+    }
+    // Note: No need to call _set_read_write_cbs - EM_JS trampolines call _pgliteCallbacks directly
 
     // Sync the filesystem from any previous store
     await this.fs!.initialSyncFs()
@@ -793,65 +790,64 @@ export class PGlite
     this.mod.HEAPU8.set(snapshotData)
 
     // Re-register callbacks (CRITICAL - callbacks are JS, not in snapshot)
+    // Using _pgliteCallbacks for Cloudflare Workers compatibility.
     this.#log('pglite: re-registering callbacks after snapshot restore')
-    // set the write callback
-    this.#pglite_write = this.mod.addFunction((ptr: any, length: number) => {
-      let bytes
-      try {
-        bytes = this.mod!.HEAPU8.subarray(ptr, ptr + length)
-      } catch (e: any) {
-        console.error('error', e)
-        throw e
-      }
-      this.#protocolParser.parse(bytes, (msg) => {
-        this.#parse(msg)
-      })
-      if (this.#keepRawResponse) {
-        const copied = bytes.slice()
-
-        let requiredSize = this.#writeOffset + copied.length
-
-        if (requiredSize > this.#inputData.length) {
-          const newSize =
-            this.#inputData.length +
-            (this.#inputData.length >> 1) +
-            requiredSize
-          if (requiredSize > PGlite.MAX_BUFFER_SIZE) {
-            requiredSize = PGlite.MAX_BUFFER_SIZE
-          }
-          const newBuffer = new Uint8Array(newSize)
-          newBuffer.set(this.#inputData.subarray(0, this.#writeOffset))
-          this.#inputData = newBuffer
+    this.mod._pgliteCallbacks = {
+      write: (ptr: number, length: number): number => {
+        let bytes
+        try {
+          bytes = this.mod!.HEAPU8.subarray(ptr, ptr + length)
+        } catch (e: any) {
+          console.error('error', e)
+          throw e
         }
+        this.#protocolParser.parse(bytes, (msg) => {
+          this.#parse(msg)
+        })
+        if (this.#keepRawResponse) {
+          const copied = bytes.slice()
 
-        this.#inputData.set(copied, this.#writeOffset)
-        this.#writeOffset += copied.length
-      }
-      return length
-    }, 'iii')
+          let requiredSize = this.#writeOffset + copied.length
 
-    // set the read callback
-    this.#pglite_read = this.mod.addFunction((ptr: any, max_length: number) => {
-      let length = this.#outputData.length - this.#readOffset
-      if (length > max_length) {
-        length = max_length
-      }
-      try {
-        this.mod!.HEAP8.set(
-          (this.#outputData as Uint8Array).subarray(
-            this.#readOffset,
-            this.#readOffset + length,
-          ),
-          ptr,
-        )
-        this.#readOffset += length
-      } catch (e) {
-        console.log(e)
-      }
-      return length
-    }, 'iii')
+          if (requiredSize > this.#inputData.length) {
+            const newSize =
+              this.#inputData.length +
+              (this.#inputData.length >> 1) +
+              requiredSize
+            if (requiredSize > PGlite.MAX_BUFFER_SIZE) {
+              requiredSize = PGlite.MAX_BUFFER_SIZE
+            }
+            const newBuffer = new Uint8Array(newSize)
+            newBuffer.set(this.#inputData.subarray(0, this.#writeOffset))
+            this.#inputData = newBuffer
+          }
 
-    this.mod._set_read_write_cbs(this.#pglite_read, this.#pglite_write)
+          this.#inputData.set(copied, this.#writeOffset)
+          this.#writeOffset += copied.length
+        }
+        return length
+      },
+      read: (ptr: number, maxLength: number): number => {
+        let length = this.#outputData.length - this.#readOffset
+        if (length > maxLength) {
+          length = maxLength
+        }
+        try {
+          this.mod!.HEAP8.set(
+            (this.#outputData as Uint8Array).subarray(
+              this.#readOffset,
+              this.#readOffset + length,
+            ),
+            ptr,
+          )
+          this.#readOffset += length
+        } catch (e) {
+          console.log(e)
+        }
+        return length
+      },
+    }
+    // Note: No need to call _set_read_write_cbs - EM_JS trampolines call _pgliteCallbacks directly
 
     // Reseed RNG (CRITICAL for security - prevents deterministic random sequences)
     this.#log('pglite: reseeding RNG after snapshot restore')
@@ -1501,14 +1497,9 @@ export class PGlite
     try {
       await this.execProtocol(serialize.end())
       this.mod!._pgl_shutdown()
-      // Clean up function pointers
-      if (this.#pglite_read !== -1) {
-        this.mod!.removeFunction(this.#pglite_read)
-        this.#pglite_read = -1
-      }
-      if (this.#pglite_write !== -1) {
-        this.mod!.removeFunction(this.#pglite_write)
-        this.#pglite_write = -1
+      // Clean up _pgliteCallbacks (no removeFunction needed with trampoline approach)
+      if (this.mod!._pgliteCallbacks) {
+        this.mod!._pgliteCallbacks = undefined
       }
     } catch (e) {
       const err = e as { name: string; status: number }
