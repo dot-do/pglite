@@ -50,19 +50,115 @@ const copyFiles = async (srcDir: string, destDir: string) => {
   }
 }
 
+async function patchForCloudflareWorkers() {
+  console.log('Patching for Cloudflare Workers compatibility...')
+
+  // Patch 1: Replace _scriptName = import.meta.url with empty string
+  // import.meta.url is undefined in Cloudflare Workers
+  await findAndReplaceInDir(
+    './dist',
+    /var _scriptName\s*=\s*import\.meta\.url;?/g,
+    'var _scriptName = "";',
+    ['.js'],
+  )
+  console.log('  Patched _scriptName')
+
+  // Patch 2: Add caches check to ENVIRONMENT_IS_NODE detection
+  // Workers have globalThis.caches, Node.js doesn't
+  await findAndReplaceInDir(
+    './dist',
+    /process\.type!="renderer"/g,
+    'process.type!="renderer"&&typeof globalThis.caches==="undefined"',
+    ['.js', '.cjs'],
+  )
+  console.log('  Patched ENVIRONMENT_IS_NODE detection')
+
+  // Patch 3: Guard the Node.js module import with caches check
+  await findAndReplaceInDir(
+    './dist',
+    /if\(ENVIRONMENT_IS_NODE\)\{const\{createRequire\}/g,
+    'if(ENVIRONMENT_IS_NODE && typeof globalThis.caches === "undefined"){const{createRequire}',
+    ['.js', '.cjs'],
+  )
+  console.log('  Patched Node.js module import guard')
+
+  // Patch 4: Replace dirname = import.meta.url with "/"
+  await findAndReplaceInDir(
+    './dist',
+    /let dirname=import\.meta\.url/g,
+    'let dirname="/"',
+    ['.js'],
+  )
+  console.log('  Patched dirname import.meta.url')
+
+  // Patch 5: Replace import.meta.url.startsWith patterns
+  await findAndReplaceInDir(
+    './dist',
+    /import\.meta\.url\.startsWith/g,
+    '("").startsWith',
+    ['.js'],
+  )
+
+  // Patch 6: Replace remaining import.meta.url with empty string
+  await findAndReplaceInDir(
+    './dist',
+    /import\.meta\.url/g,
+    '""',
+    ['.js'],
+  )
+  console.log('  Patched remaining import.meta.url references')
+
+  // Patch 7: Replace new URL(..., "") patterns from earlier patches
+  await findAndReplaceInDir(
+    './dist',
+    /new URL\("pglite\.wasm",""\)\.href/g,
+    '"pglite.wasm"',
+    ['.js', '.cjs'],
+  )
+  await findAndReplaceInDir(
+    './dist',
+    /new URL\("pglite\.data",""\)\.href/g,
+    '"pglite.data"',
+    ['.js', '.cjs'],
+  )
+  console.log('  Patched new URL patterns')
+
+  // Patch 8: Add caches check to isNode variable detection
+  await findAndReplaceInDir(
+    './dist',
+    /var isNode=typeof process==="object"&&typeof process\.versions==="object"&&typeof process\.versions\.node==="string"/g,
+    'var isNode=typeof process==="object"&&typeof process.versions==="object"&&typeof process.versions.node==="string"&&typeof globalThis.caches==="undefined"',
+    ['.js', '.cjs'],
+  )
+  console.log('  Patched isNode variable detection')
+
+  // Patch 9: Add caches check to if(isNode) conditionals
+  await findAndReplaceInDir(
+    './dist',
+    /if\(isNode\)\{/g,
+    'if(isNode && typeof globalThis.caches === "undefined"){',
+    ['.js', '.cjs'],
+  )
+  console.log('  Patched if(isNode) conditionals')
+
+  // Patch 10: Guard self.location.href access (may be undefined in Durable Objects)
+  await findAndReplaceInDir(
+    './dist',
+    /scriptDirectory=self\.location\.href/g,
+    'scriptDirectory=(self.location&&self.location.href)||""',
+    ['.js', '.cjs'],
+  )
+  console.log('  Patched self.location.href access')
+
+  console.log('Cloudflare Workers patches applied successfully')
+}
+
 async function main() {
   await copyFiles('./release', './dist')
   await findAndReplaceInDir('./dist', /\.\.\/release\//g, './', ['.js', '.cjs'])
 
-  // Fix for Cloudflare Workers: self.location is undefined in CF Workers
-  // The Emscripten-generated code tries to access self.location.href which fails
-  // Replace with optional chaining to handle this gracefully
-  await findAndReplaceInDir(
-    './dist',
-    /scriptDirectory=self\.location\.href/g,
-    'scriptDirectory=self.location?.href||""',
-    ['.js', '.cjs'],
-  )
+  // Apply Cloudflare Workers compatibility patches
+  await patchForCloudflareWorkers()
 
   await findAndReplaceInDir('./dist/contrib', /\.\.\/release\//g, '', [
     '.js',

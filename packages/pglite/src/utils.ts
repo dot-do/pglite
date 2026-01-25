@@ -3,10 +3,17 @@ import { serialize as serializeProtocol } from '@electric-sql/pg-protocol'
 import { parseDescribeStatementResults } from './parse.js'
 import { TEXT } from './types.js'
 
+// Detect Node.js environment - exclude Cloudflare Workers which have `caches` API
 export const IN_NODE =
   typeof process === 'object' &&
   typeof process.versions === 'object' &&
-  typeof process.versions.node === 'string'
+  typeof process.versions.node === 'string' &&
+  typeof globalThis.caches === 'undefined'
+
+// Detect Cloudflare Workers environment
+export const IN_CLOUDFLARE_WORKERS =
+  typeof globalThis.caches !== 'undefined' &&
+  typeof (globalThis as any).HTMLRewriter !== 'undefined'
 
 let wasmDownloadPromise: Promise<Response> | undefined
 
